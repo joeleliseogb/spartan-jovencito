@@ -51,6 +51,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -214,24 +215,24 @@ fun MainScreen(
     val isWatch = screenWidth <= 320
 
     // Ajuste responsivo estético:
-    // En vertical (modo teléfono): NO estirar alargado ni deforme. Se centra como dispositivo de diseño (aspectRatio 1.38).
-    // En horizontal: llena la altura manteniendo proporción de gadget apaisado.
+    // En smartwatch: pantalla completa nativa.
+    // En teléfonos y tabletas: aprovecha generosamente la pantalla vertical/horizontal manteniendo la carcasa industrial ejecutiva.
     val chassisModifier = when {
         isWatch -> Modifier
             .fillMaxSize()
             .clip(RoundedCornerShape(if (isRound) 24.dp else 12.dp))
         isLandscape -> Modifier
-            .fillMaxHeight(0.92f)
-            .aspectRatio(1.48f)
-            .shadow(28.dp, RoundedCornerShape(26.dp), spotColor = Color.Black.copy(alpha = 0.85f))
-            .clip(RoundedCornerShape(26.dp))
-            .border(2.dp, chassisBorder, RoundedCornerShape(26.dp))
+            .fillMaxHeight(0.95f)
+            .fillMaxWidth(0.96f)
+            .shadow(24.dp, RoundedCornerShape(22.dp), spotColor = Color.Black.copy(alpha = 0.85f))
+            .clip(RoundedCornerShape(22.dp))
+            .border(2.dp, chassisBorder, RoundedCornerShape(22.dp))
         else -> Modifier
-            .fillMaxWidth(0.92f)
-            .aspectRatio(1.38f) // Proporción perfecta de hardware centrada en pantalla vertical
-            .shadow(28.dp, RoundedCornerShape(26.dp), spotColor = Color.Black.copy(alpha = 0.85f))
-            .clip(RoundedCornerShape(26.dp))
-            .border(2.dp, chassisBorder, RoundedCornerShape(26.dp))
+            .fillMaxWidth(0.96f)
+            .fillMaxHeight(0.96f)
+            .shadow(24.dp, RoundedCornerShape(22.dp), spotColor = Color.Black.copy(alpha = 0.85f))
+            .clip(RoundedCornerShape(22.dp))
+            .border(2.dp, chassisBorder, RoundedCornerShape(22.dp))
     }
 
     Box(
@@ -324,7 +325,84 @@ fun MainScreen(
     }
 }
 
-// ==================== DISPOSICIÓN CIRCULAR NATIVA (RELOJES REDONDOS WEAR OS / SMARTWATCH) ====================
+// ==================== UTILIDADES DE NAVEGACIÓN Y ETIQUETAS DE MÓDULOS ====================
+private fun getModuleIcon(mode: JarvisMode): String = when (mode) {
+    JarvisMode.ROBOT -> "🎙️"
+    JarvisMode.STANDBY -> "⏱️"
+    JarvisMode.MINUTES -> "📑"
+    JarvisMode.RECORDER -> "🔴"
+    JarvisMode.AUDIO_PLAYER -> "🎵"
+    JarvisMode.VIDEO_PLAYER -> "📹"
+    JarvisMode.READER -> "📖"
+    JarvisMode.AGENDA -> "📅"
+}
+
+private fun getModuleShortLabel(mode: JarvisMode): String = when (mode) {
+    JarvisMode.ROBOT -> "Asistente"
+    JarvisMode.STANDBY -> "Reloj"
+    JarvisMode.MINUTES -> "Minutas"
+    JarvisMode.RECORDER -> "Grabar"
+    JarvisMode.AUDIO_PLAYER -> "Música"
+    JarvisMode.VIDEO_PLAYER -> "Video"
+    JarvisMode.READER -> "Lector"
+    JarvisMode.AGENDA -> "Agenda"
+}
+
+@Composable
+private fun ModuleNavigationDock(
+    availableModes: List<JarvisMode>,
+    currentModeIndex: Int,
+    onModeChange: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+    isCompact: Boolean = false
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        availableModes.forEachIndexed { idx, mode ->
+            val isCur = idx == currentModeIndex
+            Box(
+                modifier = Modifier
+                    .padding(horizontal = if (isCompact) 2.5.dp else 3.5.dp, vertical = 2.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(
+                        if (isCur)
+                            Brush.horizontalGradient(listOf(Color(0xFFE25227), Color(0xFFC7431B)))
+                        else
+                            Brush.horizontalGradient(listOf(Color(0xFF141722), Color(0xFF1A1F2D)))
+                    )
+                    .border(
+                        1.2.dp,
+                        if (isCur) Color(0xFFFF7043) else Color(0xFF263045),
+                        RoundedCornerShape(12.dp)
+                    )
+                    .clickable { onModeChange(idx) }
+                    .padding(horizontal = if (isCompact) 7.dp else 9.dp, vertical = if (isCompact) 3.5.dp else 5.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(text = getModuleIcon(mode), fontSize = if (isCompact) 11.sp else 13.sp)
+                    Text(
+                        text = getModuleShortLabel(mode),
+                        fontSize = if (isCompact) 9.5.sp else 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = if (isCur) FontWeight.Black else FontWeight.Bold,
+                        color = if (isCur) Color.White else Color(0xFFB0BEC5)
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ==================== DISPOSICIÓN CIRCULAR NATIVA (SMARTWATCH ULTRA-PRÁCTICO) ====================
 @Composable
 private fun CircularWatchLayout(
     voiceManager: JarvisVoiceManager,
@@ -363,10 +441,8 @@ private fun CircularWatchLayout(
                     onDragStart = { dragAccumulator = 0f },
                     onDragEnd = {
                         if (dragAccumulator < -45f) {
-                            // Swipe izquierda -> Siguiente pantalla
                             onModeChange((currentModeIndex + 1) % availableModes.size)
                         } else if (dragAccumulator > 45f) {
-                            // Swipe derecha -> Pantalla anterior
                             onModeChange((currentModeIndex - 1 + availableModes.size) % availableModes.size)
                         }
                         dragAccumulator = 0f
@@ -383,7 +459,7 @@ private fun CircularWatchLayout(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 14.dp, vertical = 22.dp)
+                .padding(top = 40.dp, bottom = 32.dp, start = 10.dp, end = 10.dp)
         ) {
             AnimatedContent(
                 targetState = currentMode,
@@ -413,121 +489,73 @@ private fun CircularWatchLayout(
             }
         }
 
-        // ==================== ARCO SUPERIOR LIMPIO: HORA Y MODO ====================
-        Row(
+        // ==================== DOCK SUPERIOR DE MÓDULOS (UN SOLO TOQUE PARA CUALQUIER MÓDULO) ====================
+        Box(
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .fillMaxWidth(0.85f)
-                .padding(top = 8.dp)
-                .clickable { onOpenSettings() },
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = telemetry.timeFormatted.take(5),
-                fontSize = 11.5.sp,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
-
-            Text(
-                text = " · ",
-                fontSize = 10.sp,
-                color = Color(0xFF6B6862)
-            )
-
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(if (operatingMode == OperatingMode.AVANZADO_DIRECTOR) Color(0xFF33160E) else Color(0xFF1B1E26))
-                    .border(1.dp, if (operatingMode == OperatingMode.AVANZADO_DIRECTOR) Color(0xFFE25227) else Color(0xFF00E5FF), RoundedCornerShape(4.dp))
-                    .padding(horizontal = 6.dp, vertical = 1.dp)
-            ) {
-                Text(
-                    text = if (currentMode == JarvisMode.ROBOT) "ASISTENTE CDPE" else currentMode.title.take(12),
-                    fontSize = 8.5.sp,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Black,
-                    color = if (operatingMode == OperatingMode.AVANZADO_DIRECTOR) Color(0xFFFF7043) else Color(0xFF00E5FF)
-                )
-            }
-        }
-
-        // ==================== BOTONES LATERALES DISCRETOS DE NAVEGACIÓN (9h y 3h) ====================
-        Box(
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .padding(start = 2.dp)
-                .size(24.dp)
-                .clip(CircleShape)
-                .background(Color.Black.copy(alpha = 0.5f))
-                .clickable {
-                    onModeChange((currentModeIndex - 1 + availableModes.size) % availableModes.size)
-                },
+                .fillMaxWidth()
+                .padding(top = 6.dp, start = 20.dp, end = 20.dp),
             contentAlignment = Alignment.Center
         ) {
-            Text(text = "‹", fontSize = 16.sp, fontWeight = FontWeight.Black, color = Color(0xFF666666))
+            ModuleNavigationDock(
+                availableModes = availableModes,
+                currentModeIndex = currentModeIndex,
+                onModeChange = onModeChange,
+                isCompact = true
+            )
         }
 
-        Box(
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .padding(end = 2.dp)
-                .size(24.dp)
-                .clip(CircleShape)
-                .background(Color.Black.copy(alpha = 0.5f))
-                .clickable {
-                    onModeChange((currentModeIndex + 1) % availableModes.size)
-                },
-            contentAlignment = Alignment.Center
-        ) {
-            Text(text = "›", fontSize = 16.sp, fontWeight = FontWeight.Black, color = Color(0xFF666666))
-        }
-
-        // ==================== PUNTOS INDICADORES DE PANTALLA ====================
+        // ==================== BARRA INFERIOR DE ESTADO Y MARCA JOWELL ====================
         Row(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 28.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                .fillMaxWidth(0.85f)
+                .padding(bottom = 6.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            availableModes.forEachIndexed { idx, _ ->
-                Box(
-                    modifier = Modifier
-                        .size(if (idx == currentModeIndex) 5.5.dp else 3.dp)
-                        .clip(CircleShape)
-                        .background(if (idx == currentModeIndex) Color(0xFF00E5FF) else Color(0xFF444444))
+            // Hora actual
+            Text(
+                text = telemetry.timeFormatted.take(5),
+                fontSize = 10.5.sp,
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF78909C)
+            )
+
+            // Botón Marca JOWELL (Toca para Ajustes)
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF1E1714))
+                    .border(1.2.dp, Color(0xFFE25227), RoundedCornerShape(8.dp))
+                    .clickable { onOpenSettings() }
+                    .padding(horizontal = 10.dp, vertical = 2.5.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "⚙ JOWELL",
+                    fontSize = 9.5.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 1.sp,
+                    color = Color(0xFFFF7043)
                 )
             }
-        }
 
-        // ==================== BOTÓN DE MARCA J O W E L L ====================
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 5.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(Color(0xFF1A1412))
-                .border(1.2.dp, Color(0xFFE25227), RoundedCornerShape(8.dp))
-                .clickable { onOpenSettings() }
-                .padding(horizontal = 14.dp, vertical = 3.dp),
-            contentAlignment = Alignment.Center
-        ) {
+            // Batería / Estado
             Text(
-                text = "J O W E L L",
-                fontSize = 10.sp,
+                text = "${telemetry.batteryLevel}%${if (telemetry.isCharging) "⚡" else ""}",
+                fontSize = 10.5.sp,
                 fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Black,
-                letterSpacing = 2.5.sp,
-                color = Color(0xFFFF7043)
+                fontWeight = FontWeight.Bold,
+                color = if (telemetry.batteryLevel > 20) Color(0xFF00E5FF) else Color(0xFFFF5252)
             )
         }
     }
 }
 
-// ==================== DISPOSICIÓN INDUSTRIAL RECTANGULAR / CUADRADA ====================
+// ==================== DISPOSICIÓN INDUSTRIAL RECTANGULAR (TELÉFONOS Y TABLETAS) ====================
 @Composable
 private fun RectangularIndustrialLayout(
     voiceManager: JarvisVoiceManager,
@@ -558,14 +586,14 @@ private fun RectangularIndustrialLayout(
         modifier = chassisModifier
             .background(chassisColor)
     ) {
-        // Ranuras mecánicas de la carcasa
+        // Ranuras mecánicas de la carcasa retro
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .drawBehind {
-                    val rightPanelX = size.width * 0.64f
-                    val topSeamY = size.height * 0.14f
-                    val midSeamY = size.height * 0.70f
+                    val rightPanelX = size.width * 0.72f
+                    val topSeamY = size.height * 0.16f
+                    val midSeamY = size.height * 0.68f
 
                     drawLine(seamLineColor, Offset(rightPanelX, 0f), Offset(rightPanelX, size.height), strokeWidth = 2.5f)
                     drawLine(seamLineColor, Offset(rightPanelX, topSeamY), Offset(size.width, topSeamY), strokeWidth = 2f)
@@ -574,60 +602,75 @@ private fun RectangularIndustrialLayout(
         )
 
         Row(modifier = Modifier.fillMaxSize()) {
-            // ==================== PANTALLA OLED DINÁMICA (LADO IZQUIERDO) ====================
+            // ==================== PANTALLA OLED DINÁMICA (LADO IZQUIERDO - 72% ANCHO) ====================
             Box(
                 modifier = Modifier
-                    .weight(0.64f)
+                    .weight(0.72f)
                     .fillMaxHeight()
-                    .padding(start = 10.dp, top = 12.dp, bottom = 12.dp, end = 6.dp)
+                    .padding(start = 10.dp, top = 10.dp, bottom = 10.dp, end = 6.dp)
                     .clip(RoundedCornerShape(18.dp))
                     .background(screenBg)
                     .border(1.5.dp, Color(0xFF1E1E1E), RoundedCornerShape(18.dp))
-                    .padding(10.dp)
+                    .padding(8.dp)
             ) {
-                AnimatedContent(
-                    targetState = currentMode,
-                    transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(200)) },
-                    label = "modeSwap"
-                ) { mode ->
-                    when (mode) {
-                        JarvisMode.ROBOT -> RobotLiveScreen(
-                            state = state,
-                            liveText = liveText,
-                            lastResponse = lastResponse,
-                            operatingMode = operatingMode,
-                            activeCampaignProject = activeCampaignProject,
-                            telemetry = telemetry,
-                            onOpenSettings = onOpenSettings
-                        )
-                        JarvisMode.RECORDER -> RecorderScreen(voiceManager, isRound = false)
-                        JarvisMode.AUDIO_PLAYER -> AudioPlayerScreen(isRound = false)
-                        JarvisMode.VIDEO_PLAYER -> VideoPlayerScreen(isRound = false)
-                        JarvisMode.READER -> PdfReaderScreen(voiceManager, isRound = false)
-                        JarvisMode.MINUTES -> MinutesScreen(voiceManager, liveText, lastResponse, isRound = false)
-                        JarvisMode.AGENDA -> AgendaScreen(voiceManager, isRound = false)
-                        JarvisMode.STANDBY -> StandbyScreen(telemetry, isRound = false, onOpenSettings = onOpenSettings)
+                Column(modifier = Modifier.fillMaxSize()) {
+                    // DOCK DE ACCESO DIRECTO A MÓDULOS (UN TOQUE)
+                    ModuleNavigationDock(
+                        availableModes = availableModes,
+                        currentModeIndex = currentModeIndex,
+                        onModeChange = onModeChange,
+                        isCompact = false,
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    )
+
+                    // CONTENIDO DEL MÓDULO ACTIVO
+                    Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                        AnimatedContent(
+                            targetState = currentMode,
+                            transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(200)) },
+                            label = "modeSwap"
+                        ) { mode ->
+                            when (mode) {
+                                JarvisMode.ROBOT -> RobotLiveScreen(
+                                    state = state,
+                                    liveText = liveText,
+                                    lastResponse = lastResponse,
+                                    operatingMode = operatingMode,
+                                    activeCampaignProject = activeCampaignProject,
+                                    telemetry = telemetry,
+                                    onOpenSettings = onOpenSettings,
+                                    isRound = false
+                                )
+                                JarvisMode.RECORDER -> RecorderScreen(voiceManager, isRound = false)
+                                JarvisMode.AUDIO_PLAYER -> AudioPlayerScreen(isRound = false)
+                                JarvisMode.VIDEO_PLAYER -> VideoPlayerScreen(isRound = false)
+                                JarvisMode.READER -> PdfReaderScreen(voiceManager, isRound = false)
+                                JarvisMode.MINUTES -> MinutesScreen(voiceManager, liveText, lastResponse, isRound = false)
+                                JarvisMode.AGENDA -> AgendaScreen(voiceManager, isRound = false)
+                                JarvisMode.STANDBY -> StandbyScreen(telemetry, isRound = false, onOpenSettings = onOpenSettings)
+                            }
+                        }
                     }
                 }
             }
 
-            // ==================== MANDOS FÍSICOS (LADO DERECHO) ====================
+            // ==================== MANDOS FÍSICOS INDUSTRIALES (LADO DERECHO - 28% ANCHO) ====================
             Column(
                 modifier = Modifier
-                    .weight(0.36f)
+                    .weight(0.28f)
                     .fillMaxHeight()
-                    .padding(top = 12.dp, bottom = 12.dp, end = 12.dp, start = 8.dp),
+                    .padding(top = 10.dp, bottom = 10.dp, end = 10.dp, start = 6.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
-                // Indicadores LED de Modos / Selector de Voz (▪ ▪ ◼ ▪ ▪)
+                // Indicadores LED de Modos / Selector de Voz
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier
-                        .padding(top = 4.dp)
+                        .padding(top = 2.dp)
                         .clickable { voiceManager.cycleVoiceType() }
                 ) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(3.5.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                         Box(modifier = Modifier.size(3.5.dp).background(Color(0xFF555555), RoundedCornerShape(1.dp)))
                         Box(modifier = Modifier.size(3.5.dp).background(Color(0xFF555555), RoundedCornerShape(1.dp)))
                         Box(modifier = Modifier.size(4.dp).background(orangeButton, RoundedCornerShape(1.dp)))
@@ -637,7 +680,7 @@ private fun RectangularIndustrialLayout(
                     Spacer(modifier = Modifier.height(3.dp))
                     Text(
                         text = voiceType.shortName,
-                        fontSize = 10.sp,
+                        fontSize = 9.5.sp,
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF383530)
@@ -645,45 +688,45 @@ private fun RectangularIndustrialLayout(
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = "${telemetry.headingDegrees}°${telemetry.cardinalDirection} · ${telemetry.batteryLevel}%",
-                        fontSize = 9.sp,
+                        fontSize = 8.5.sp,
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF4E4B45)
                     )
                 }
 
-                // Botón Basculante Dual (Rocker Switch: Arriba/Abajo para cambiar modo)
+                // Botón Basculante Dual (Rocker Switch: Arriba/Abajo para cambiar modo con confirmación táctil)
                 Column(
                     modifier = Modifier
-                        .width(52.dp)
-                        .shadow(6.dp, RoundedCornerShape(26.dp))
-                        .clip(RoundedCornerShape(26.dp))
+                        .width(48.dp)
+                        .shadow(6.dp, RoundedCornerShape(24.dp))
+                        .clip(RoundedCornerShape(24.dp))
                         .background(rockerColor)
-                        .border(1.dp, rockerBorder, RoundedCornerShape(26.dp)),
+                        .border(1.dp, rockerBorder, RoundedCornerShape(24.dp)),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(44.dp)
+                            .height(40.dp)
                             .clickable {
                                 onModeChange((currentModeIndex - 1 + availableModes.size) % availableModes.size)
                             }
                     ) {
-                        Text(text = "^", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF6B6862))
+                        Text(text = "▲", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF5A5752))
                     }
                     Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color(0xFF9E9A92)))
                     Box(
                         contentAlignment = Alignment.Center,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(44.dp)
+                            .height(40.dp)
                             .clickable {
                                 onModeChange((currentModeIndex + 1) % availableModes.size)
                             }
                     ) {
-                        Text(text = "v", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF6B6862))
+                        Text(text = "▼", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF5A5752))
                     }
                 }
 
@@ -701,7 +744,7 @@ private fun RectangularIndustrialLayout(
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
-                        .size(58.dp)
+                        .size(54.dp)
                         .scale(pulseAnim)
                         .shadow(if (isSessionActive) 8.dp else 4.dp, CircleShape)
                         .clip(CircleShape)
@@ -720,25 +763,30 @@ private fun RectangularIndustrialLayout(
                 ) {
                     Text(
                         text = if (isSessionActive) "●" else "✔",
-                        fontSize = if (isSessionActive) 22.sp else 19.sp,
+                        fontSize = if (isSessionActive) 21.sp else 18.sp,
                         fontWeight = FontWeight.Black,
                         fontFamily = FontFamily.Monospace,
                         color = if (isSessionActive) Color(0xFF00E5FF) else Color(0xFF1E110A)
                     )
                 }
 
-                // Grabado industrial de precisión con la marca del chasis (Toca para abrir Centro de Control CDPE)
-                Text(
-                    text = "J O W E L L",
-                    fontSize = 10.sp,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Black,
-                    letterSpacing = 2.sp,
-                    color = Color(0xFF383530),
+                // Grabado industrial con marca J O W E L L (Abre Ajustes / Centro de Control)
+                Box(
                     modifier = Modifier
-                        .padding(bottom = 4.dp)
+                        .clip(RoundedCornerShape(6.dp))
                         .clickable { onOpenSettings() }
-                )
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "J O W E L L",
+                        fontSize = 9.5.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = 2.sp,
+                        color = Color(0xFF383530)
+                    )
+                }
             }
         }
     }
