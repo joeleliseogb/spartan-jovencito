@@ -1,0 +1,16 @@
+# Gradle & build caches
+.gradle/
+build/
+**/build/
+**/.gradle/
+local.properties
+**/local.properties
+.idea/
+**/.idea/
+*.iml
+**/*.iml
+.DS_Store
+.directory
+.kotlin/
+**/.kotlin/
+Jarvis.apk
