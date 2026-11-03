@@ -2485,8 +2485,8 @@ private fun RecorderScreen(voiceManager: JarvisVoiceManager, isRound: Boolean = 
                 setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
                 setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
                 setAudioChannels(1) // Mono para evitar cancelaciones acústicas de sala
-                setAudioEncodingBitRate(128000)
-                setAudioSamplingRate(44100)
+                setAudioEncodingBitRate(256000) // 256 kbps para máxima claridad y fidelidad
+                setAudioSamplingRate(48000) // 48 kHz estándar de estudio broadcast nativo de hardware
                 setOutputFile(file.absolutePath)
                 prepare()
                 start()
@@ -4721,8 +4721,8 @@ private fun MinutesScreen(
                 setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
                 setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
                 setAudioChannels(1) // Mono para eliminar cancelaciones acústicas de sala
-                setAudioEncodingBitRate(128000)
-                setAudioSamplingRate(44100)
+                setAudioEncodingBitRate(256000) // 256 kbps máxima definición de voz
+                setAudioSamplingRate(48000) // 48 kHz estándar broadcast nativo de hardware
                 setOutputFile(audioFile.absolutePath)
                 prepare()
                 start()

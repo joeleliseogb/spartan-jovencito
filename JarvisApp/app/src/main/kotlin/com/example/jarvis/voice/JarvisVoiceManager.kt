@@ -1929,27 +1929,28 @@ class JarvisVoiceManager(private val context: Context) : TextToSpeech.OnInitList
                 val mimeType = if (file.name.endsWith(".m4a", ignoreCase = true)) "audio/mp4" else "audio/mp4"
 
                 val diarizationRule = if (!participantsHint.isNullOrBlank()) {
-                    "3. DIARIZACIÓN CON PARTICIPANTES IDENTIFICADOS:\nLos asistentes confirmados a la reunión son: $participantsHint.\nAsigna con precisión cada intervención al nombre y rol correspondiente de acuerdo a sus voces e intervenciones."
+                    "3. DIARIZACIÓN CON PARTICIPANTES IDENTIFICADOS:\nLos asistentes confirmados a la reunión son: $participantsHint.\nAsigna con precisión cada intervención al nombre y rol correspondiente de acuerdo a sus voces e intervenciones (usa únicamente 'Director' para el líder de la reunión, nunca menciones su nombre personal)."
                 } else {
-                    "3. DIARIZACIÓN PRECISA: Separa y distingue claramente a los oradores por sus timbres de voz (ej. Director Joel, Clientes/Socios, Niña/Familiar, etc.)."
+                    "3. DIARIZACIÓN PRECISA: Separa y distingue claramente a los oradores por sus timbres de voz (identifica al líder de la reunión únicamente como 'Director', nunca menciones su nombre personal, y a los demás como 'Cliente', 'Socio', etc.)."
                 }
 
                 val promptText = """
-Eres el transcriptor y asistente de confianza del Director Joel (CDPE Guatemala).
+Eres el transcriptor y asistente de confianza del Director (CDPE Guatemala).
 Analiza este archivo de audio grabado en sala real con absoluta precisión acústica y fidelidad:
 
-TRATAMIENTO ACÚSTICO Y RESTAURACIÓN DE AUDIO:
-1. CANCELACIÓN DE RUIDO Y ESTÁTICA: La grabación contiene ruido de fondo de sala, reverberación, eco y estática ambiental. Filtra y anula esos ruidos; no dejes que la estática oculte las palabras habladas.
-2. GANANCIA Y AMPLIFICACIÓN (+20 dB): Los oradores pueden encontrarse a cierta distancia del teléfono con voz baja. Aplica máxima sensibilidad para amplificar las frecuencias de la voz humana y entender con total claridad lo que dicen en español.
+TRATAMIENTO ACÚSTICO Y RESTAURACIÓN DE AUDIO (MÁXIMA CALIDAD):
+1. CANCELACIÓN DE RUIDO Y ESTÁTICA: La grabación contiene ruido de fondo de sala, reverberación, eco y estática ambiental. Filtra y anula frecuencias parásitas (zumbidos, soplos y ruidos de mesa); no dejes que la estática oculte las palabras habladas.
+2. GANANCIA Y AMPLIFICACIÓN (+20 dB): Los oradores pueden encontrarse a cierta distancia del teléfono con voz baja. Aplica máxima sensibilidad para realzar la banda vocal (300 Hz - 3400 Hz) y entender con total claridad lo que dicen en español.
 $diarizationRule
 4. TRANSCRIPCIÓN LITERAL LIMPIA: Escribe palabra por palabra lo que realmente dijeron, eliminando ruidos parásitos o sonidos del ambiente.
 
 REGLAS DE ORO:
-1. CERO INVENTOS NI EXAGERACIONES: Sé fiel y directo con lo que ocurrió en la conversación.
+1. IDENTIFICACIÓN DEL LÍDER: Refiérete y etiqueta al líder de la reunión ÚNICAMENTE como "Director" (NUNCA menciones nombres propios personales).
+2. CERO INVENTOS NI EXAGERACIONES: Sé fiel y directo con lo que ocurrió en la conversación.
    - Si el audio es una plática cotidiana, doméstica o una interacción breve, descríbela con naturalidad y sencillez.
    - NUNCA inventes explicaciones corporativas ficticias ni justificaciones burocráticas para frases informales.
-2. ACUERDOS REALES: Solo registra acuerdos si los interlocutores pactan un compromiso explícito. Si no hay acuerdos, escribe: "Sin acuerdos en este fragmento".
-3. CITAS Y CALENDARIO: Solo registra citas si los interlocutores acuerdan verse en una fecha/hora específica. Si no hay fechas, escribe: "Sin citas ni eventos mencionados".
+3. ACUERDOS REALES: Solo registra acuerdos si los interlocutores pactan un compromiso explícito. Si no hay acuerdos, escribe: "Sin acuerdos en este fragmento".
+4. CITAS Y CALENDARIO: Solo registra citas si los interlocutores acuerdan verse en una fecha/hora específica. Si no hay fechas, escribe: "Sin citas ni eventos mencionados".
 
 Estructura tu respuesta exactamente así, sin saludos ni preámbulos:
 📌 RESUMEN
@@ -1962,7 +1963,7 @@ Estructura tu respuesta exactamente así, sin saludos ni preámbulos:
 (Las fechas acordadas con día/hora, o "Sin citas ni eventos mencionados")
 
 📝 TRANSCRIPCIÓN
-(Diálogo exacto palabra por palabra indicando el nombre o rol de cada orador)
+(Diálogo exacto palabra por palabra indicando el nombre o rol de cada orador, usando "Director")
 """.trimIndent()
 
                 val json = JSONObject().apply {

@@ -110,7 +110,7 @@ class ExecutiveMeetingEngine(
         if (customParticipants.isNotEmpty()) {
             participants.addAll(customParticipants)
         } else {
-            participants.add("Joel (Director CDPE)")
+            participants.add("Director (CDPE)")
             if (history.any { it.role != "user" } || (directAiTranscript != null && directAiTranscript.contains("Cliente", ignoreCase = true))) {
                 participants.add("Cliente / Interlocutor")
             }
@@ -163,7 +163,7 @@ class ExecutiveMeetingEngine(
         } else {
             history.forEachIndexed { idx, turn ->
                 val speakerLabel = when {
-                    turn.role == "user" && idx % 2 == 0 -> "JOEL (DIRECTOR)"
+                    turn.role == "user" && idx % 2 == 0 -> "DIRECTOR"
                     turn.role == "client" || turn.role == "user" -> "CLIENTE / INTERLOCUTOR"
                     else -> "INTERLOCUTOR"
                 }
@@ -355,7 +355,7 @@ class ExecutiveMeetingEngine(
         }
 
         if (agreements.isEmpty() && sentences.size >= 2) {
-            agreements.add("Seguimiento y revisión de temas tratados por el Director Joel.")
+            agreements.add("Seguimiento y revisión de temas tratados por la Dirección.")
         }
         return agreements
     }
