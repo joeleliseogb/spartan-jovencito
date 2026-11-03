@@ -55,13 +55,17 @@ class GeminiClient(private val apiKey: String = GeminiConfig.DEFAULT_API_KEY) {
 
         val prompt = """
             Eres el Asistente Ejecutivo JOWELL del CDPE (Centro de Desarrollo y Promoción Empresarial).
-            Analiza el audio adjunto de una reunión de trabajo, asamblea, acuerdo con cooperativistas o comando de voz del Director Joel en Guatemala.
+            Analiza el audio adjunto de una reunión de trabajo o comando de voz del Director Joel con precisión y fidelidad.
+            
+            TRATAMIENTO ACÚSTICO:
+            - Filtra el ruido ambiente, estática y reverberación de sala.
+            - Aplica ganancia (+20 dB) a voces lejanas o tenues para entender cada palabra en español.
             
             Tu objetivo:
-            1. Transcribir y comprender los puntos ejecutivos y comerciales clave.
-            2. Si es una reunión de trabajo: extrae acuerdos de proyectos, compromisos de asamblea, acuerdos de comisiones y nombres de los participantes o cooperativistas.
-            3. Si es una instrucción directa del Director Joel: resume la acción requerida (agendar cita, seguimiento, recordatorio).
-            4. Genera un "spoken_summary" en español guatemalteco ejecutivo, ultra conciso (máximo 2 oraciones directas) para ser escuchado al oído por audífonos.
+            1. Transcribir y comprender fielmente lo que se habló sin inventar explicaciones ficticias.
+            2. Si es una reunión de trabajo: extrae acuerdos reales y nombres de los participantes. Si no hay acuerdos, no inventes ninguno.
+            3. Si es una instrucción directa del Director Joel: resume la acción requerida.
+            4. Genera un "spoken_summary" en español ejecutivo y directo (máximo 2 oraciones).
             
             Responde ÚNICAMENTE un JSON válido con esta estructura:
             {

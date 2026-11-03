@@ -393,9 +393,8 @@ class JarvisVoiceManager(private val context: Context) : TextToSpeech.OnInitList
                             return
                         }
 
-                        // Modo reunión silenciosa activa: re-armar escucha sin emitir sonido
+                        // Modo reunión silenciosa activa: NO re-armar SpeechRecognizer para evitar pitidos/beeps del sistema
                         if (_isMeetingModeActive.value) {
-                            scheduleRestartListening(delayMs = 300L)
                             return
                         }
 
@@ -418,16 +417,9 @@ class JarvisVoiceManager(private val context: Context) : TextToSpeech.OnInitList
                         val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION) ?: arrayListOf()
                         val text = selectBestMatch(matches)
 
-                        // MODO REUNIÓN CON CLIENTES: Registrar oradores en silencio, NUNCA responder ni interrumpir
+                        // MODO REUNIÓN CON CLIENTES: Silencio total, NO reiniciar SpeechRecognizer para evitar beeps
                         if (_isMeetingModeActive.value) {
-                            if (text.isNotBlank()) {
-                                val currentTurns = conversationHistory.size
-                                val role = if (currentTurns % 2 == 0) "user" else "client"
-                                addHistoryTurn(role, text)
-                                _liveTranscript.value = text
-                            }
                             speechBuffer.clear()
-                            scheduleRestartListening(delayMs = 200L)
                             return
                         }
 
@@ -509,8 +501,8 @@ class JarvisVoiceManager(private val context: Context) : TextToSpeech.OnInitList
 
     /**
      * MODO SECRETARIO SILENCIOSO (ACTAS Y REUNIONES CON CLIENTES):
-     * Transcribe fielmente todo lo que se habla en la sala SIN responder,
-     * SIN interrumpir y SIN emitir sonidos con el altavoz.
+     * Graba fielmente el audio físico con el micrófono en alta sensibilidad.
+     * CERO pitidos (beeps), CERO interrupciones y CERO sonidos de altavoz.
      */
     fun startMeetingRecordingMode() {
         try {
@@ -521,8 +513,9 @@ class JarvisVoiceManager(private val context: Context) : TextToSpeech.OnInitList
             textToSpeech?.stop()
             speechBuffer.clear()
             _voiceState.value = VoiceState.LISTENING
-            _liveTranscript.value = "🔴 Grabando reunión. Transcribiendo en silencio..."
-            startListeningInternal()
+            _liveTranscript.value = "🔴 Grabando reunión continua (Silencio absoluto: sin pitidos ni interrupciones)..."
+            // Desactivar SpeechRecognizer para eliminar por completo los 'beeps' de detección de voz de Android
+            stopListeningInternal()
         } catch (e: Throwable) {
             Log.e("JarvisVoiceManager", "Error al iniciar modo reunion silenciosa", e)
         }
@@ -549,7 +542,8 @@ class JarvisVoiceManager(private val context: Context) : TextToSpeech.OnInitList
     }
 
     private fun startListeningInternal() {
-        if (_voiceState.value == VoiceState.SPEAKING || _voiceState.value == VoiceState.PROCESSING) {
+        // En modo reunión continua NO se usa SpeechRecognizer (evita beeps y degradación del audio)
+        if (_isMeetingModeActive.value || _voiceState.value == VoiceState.SPEAKING || _voiceState.value == VoiceState.PROCESSING) {
             return
         }
         try {
@@ -589,10 +583,11 @@ class JarvisVoiceManager(private val context: Context) : TextToSpeech.OnInitList
     }
 
     private fun scheduleRestartListening(delayMs: Long) {
-        if (!_isConversationModeActive.value && !_isMeetingModeActive.value) return
+        // Si estamos en reunión silenciosa, nunca reiniciar SpeechRecognizer
+        if (!_isConversationModeActive.value || _isMeetingModeActive.value) return
         scope.launch {
             delay(delayMs)
-            if ((_isConversationModeActive.value || _isMeetingModeActive.value) &&
+            if (_isConversationModeActive.value && !_isMeetingModeActive.value &&
                 _voiceState.value != VoiceState.SPEAKING &&
                 _voiceState.value != VoiceState.PROCESSING) {
                 startListeningInternal()
@@ -1910,19 +1905,23 @@ class JarvisVoiceManager(private val context: Context) : TextToSpeech.OnInitList
                 val mimeType = if (file.name.endsWith(".m4a", ignoreCase = true)) "audio/mp4" else "audio/mp4"
 
                 val promptText = """
-Eres el transcriptor y asistente del Director Joel (CDPE Guatemala).
-Analiza este audio con absoluta fidelidad y sentido común:
+Eres el transcriptor y asistente de confianza del Director Joel (CDPE Guatemala).
+Analiza este archivo de audio grabado en sala real con absoluta precisión acústica y fidelidad:
+
+TRATAMIENTO ACÚSTICO Y RESTAURACIÓN DE AUDIO:
+1. CANCELACIÓN DE RUIDO Y ESTÁTICA: La grabación contiene ruido de fondo de sala, reverberación, eco y estática ambiental. Filtra y anula esos ruidos; no dejes que la estática oculte las palabras habladas.
+2. GANANCIA Y AMPLIFICACIÓN (+20 dB): Los oradores pueden encontrarse a cierta distancia del teléfono con voz baja. Aplica máxima sensibilidad para amplificar las frecuencias de la voz humana y entender con total claridad lo que dicen en español.
+3. DIARIZACIÓN PRECISA: Separa y distingue claramente a los oradores por sus timbres de voz (ej. Director Joel, Clientes/Socios, Niña/Familiar, etc.).
+4. TRANSCRIPCIÓN LITERAL LIMPIA: Escribe palabra por palabra lo que realmente dijeron, eliminando ruidos parásitos o sonidos del ambiente.
 
 REGLAS DE ORO:
-1. CERO INVENTOS NI EXAGERACIONES: Sé natural, directo y fiel a lo que realmente ocurre.
-   - Si el audio es una plática cotidiana, doméstica o una interacción con niños/familia, indícalo de manera sencilla y clara.
-   - NUNCA inventes explicaciones corporativas absurdas ni protocolos de negocio ficticios para frases casuales o domésticas.
-   - Si el audio es muy corto o solo contiene llamados de atención o saludos, descríbelo tal cual, sin adornos ni justificaciones.
-2. ACUERDOS REALES: Solo registra acuerdos si los interlocutores pactan un compromiso real y explícito en el audio. Si no hay acuerdos, escribe: "Sin acuerdos en este fragmento".
-3. CITAS Y CALENDARIO: Solo registra citas si los interlocutores acuerdan expresamente verse un día, fecha u hora específica. Si no hay fechas explícitas, escribe: "Sin citas ni eventos mencionados".
-4. DIARIZACIÓN FIEL: Transcribe exactamente las frases habladas indicando el orador.
+1. CERO INVENTOS NI EXAGERACIONES: Sé fiel y directo con lo que ocurrió en la conversación.
+   - Si el audio es una plática cotidiana, doméstica o una interacción breve, descríbela con naturalidad y sencillez.
+   - NUNCA inventes explicaciones corporativas ficticias ni justificaciones burocráticas para frases informales.
+2. ACUERDOS REALES: Solo registra acuerdos si los interlocutores pactan un compromiso explícito. Si no hay acuerdos, escribe: "Sin acuerdos en este fragmento".
+3. CITAS Y CALENDARIO: Solo registra citas si los interlocutores acuerdan verse en una fecha/hora específica. Si no hay fechas, escribe: "Sin citas ni eventos mencionados".
 
-Estructura tu respuesta exactamente así, sin saludos ni introducciones:
+Estructura tu respuesta exactamente así, sin saludos ni preámbulos:
 📌 RESUMEN
 (1 a 3 viñetas breves y realistas con lo que realmente ocurrió)
 
@@ -1933,7 +1932,7 @@ Estructura tu respuesta exactamente así, sin saludos ni introducciones:
 (Las fechas acordadas con día/hora, o "Sin citas ni eventos mencionados")
 
 📝 TRANSCRIPCIÓN
-(Diálogo exacto palabra por palabra de los interlocutores)
+(Diálogo exacto palabra por palabra indicando el nombre o rol de cada orador)
 """.trimIndent()
 
                 val json = JSONObject().apply {
