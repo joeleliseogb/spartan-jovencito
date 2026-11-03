@@ -24,6 +24,9 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
@@ -88,6 +91,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -730,44 +734,87 @@ private fun RectangularIndustrialLayout(
                     }
                 }
 
-                // BOTÓN PRINCIPAL NARANJA (Con checkmark ✔ idéntico a la foto de referencia)
-                val pulseAnim by rememberInfiniteTransition(label = "pulse").animateFloat(
-                    initialValue = 1f,
-                    targetValue = if (isSessionActive) 1.06f else 1f,
+                // BOTÓN PRINCIPAL NARANJA MECÁNICO CON LED BLANCO (Efecto Presionado / Suelto con contraste puro)
+                val whiteLedTransition = rememberInfiniteTransition(label = "whiteLedPulse")
+                val whiteLedGlow by whiteLedTransition.animateFloat(
+                    initialValue = 0.65f,
+                    targetValue = 1.0f,
                     animationSpec = infiniteRepeatable(
                         animation = tween(600, easing = LinearEasing),
                         repeatMode = RepeatMode.Reverse
                     ),
-                    label = "pulseScale"
+                    label = "whiteLedGlow"
                 )
 
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
                         .size(54.dp)
-                        .scale(pulseAnim)
-                        .shadow(if (isSessionActive) 8.dp else 4.dp, CircleShape)
+                        .scale(if (isSessionActive) 0.91f else 1.0f)
+                        .shadow(if (isSessionActive) 1.dp else 6.dp, CircleShape)
                         .clip(CircleShape)
-                        .background(if (isSessionActive) Color(0xFFFF5722) else orangeButtonBorder)
-                        .padding(3.dp)
+                        .background(if (isSessionActive) Color(0xFF381005) else Color(0xFF8D2C0D))
+                        .padding(if (isSessionActive) 3.5.dp else 3.dp)
                         .clip(CircleShape)
                         .background(
                             if (isSessionActive)
-                                Brush.verticalGradient(listOf(Color(0xFFFF5722), Color(0xFFD84315)))
+                                Brush.verticalGradient(listOf(Color(0xFFD84315), Color(0xFFBF360C), Color(0xFF8A2404)))
                             else
-                                Brush.verticalGradient(listOf(orangeButton, Color(0xFFC7431B)))
+                                Brush.verticalGradient(listOf(Color(0xFFFF7043), Color(0xFFE64A19), Color(0xFFC73E12)))
                         )
                         .clickable {
                             voiceManager.toggleConversationMode()
                         }
                 ) {
-                    Text(
-                        text = if (isSessionActive) "●" else "✔",
-                        fontSize = if (isSessionActive) 21.sp else 18.sp,
-                        fontWeight = FontWeight.Black,
-                        fontFamily = FontFamily.Monospace,
-                        color = if (isSessionActive) Color(0xFF00E5FF) else Color(0xFF1E110A)
-                    )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(vertical = 5.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        // Indicador LED Blanco Puro (Encendido y Apagado con contraste sobre naranja)
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.size(12.dp)
+                        ) {
+                            if (isSessionActive) {
+                                // Halo de brillo LED blanco puro difuso
+                                Box(
+                                    modifier = Modifier
+                                        .size(13.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.White.copy(alpha = 0.5f * whiteLedGlow))
+                                )
+                                // Diodo LED blanco brillante de alta potencia (ON)
+                                Box(
+                                    modifier = Modifier
+                                        .size(7.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.White)
+                                        .border(0.6.dp, Color(0xFFEEEEEE), CircleShape)
+                                )
+                            } else {
+                                // LED apagado: diodo físico blanco ahumado / traslúcido en reposo (OFF)
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.5.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0x35FFFFFF))
+                                        .border(0.6.dp, Color(0x40000000), CircleShape)
+                                )
+                            }
+                        }
+
+                        // Checkmark ✔ grabado (blanco iluminado si está presionado/activo, oscuro si está suelto)
+                        Text(
+                            text = "✔",
+                            fontSize = if (isSessionActive) 17.sp else 19.sp,
+                            fontWeight = FontWeight.Black,
+                            fontFamily = FontFamily.Monospace,
+                            color = if (isSessionActive) Color.White else Color(0xFF261208)
+                        )
+                    }
                 }
 
                 // Grabado industrial con marca J O W E L L (Abre Ajustes / Centro de Control)
@@ -1707,16 +1754,18 @@ private fun RobotLiveScreen(
             }
         }
 
-        // Pie de tarjeta o botón de habla táctil en reloj redondo
+        // Pie de tarjeta o botón de habla táctil mecánico en reloj redondo
         if (isRound && onToggleVoice != null) {
-            val pulseRoundMic by rememberInfiniteTransition(label = "pulseRoundMic").animateFloat(
-                initialValue = 1f,
-                targetValue = if (state == VoiceState.LISTENING) 1.08f else 1f,
+            val isListening = state == VoiceState.LISTENING
+            val roundLedTransition = rememberInfiniteTransition(label = "roundLedPulse")
+            val roundLedGlow by roundLedTransition.animateFloat(
+                initialValue = 0.6f,
+                targetValue = 1.0f,
                 animationSpec = infiniteRepeatable(
-                    animation = tween(500, easing = LinearEasing),
+                    animation = tween(600, easing = LinearEasing),
                     repeatMode = RepeatMode.Reverse
                 ),
-                label = "pulseRoundMicScale"
+                label = "roundLedGlow"
             )
 
             Box(
@@ -1727,21 +1776,59 @@ private fun RobotLiveScreen(
             ) {
                 Box(
                     modifier = Modifier
-                        .height(32.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .scale(pulseRoundMic)
-                        .background(if (state == VoiceState.LISTENING) Color(0xFF00E5FF) else Color(0xFFE25227))
+                        .height(34.dp)
+                        .scale(if (isListening) 0.93f else 1.0f)
+                        .shadow(if (isListening) 1.dp else 5.dp, RoundedCornerShape(17.dp))
+                        .clip(RoundedCornerShape(17.dp))
+                        .background(
+                            if (isListening)
+                                Brush.horizontalGradient(listOf(Color(0xFFD84315), Color(0xFFBF360C)))
+                            else
+                                Brush.horizontalGradient(listOf(Color(0xFFFF7043), Color(0xFFE64A19)))
+                        )
+                        .border(1.dp, if (isListening) Color(0xFF381005) else Color(0xFF8D2C0D), RoundedCornerShape(17.dp))
                         .clickable { onToggleVoice() }
-                        .padding(horizontal = 16.dp),
+                        .padding(horizontal = 14.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = if (state == VoiceState.LISTENING) "● ESCUCHANDO..." else "🎙 TOCAR PARA HABLAR",
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Black,
-                        fontFamily = FontFamily.Monospace,
-                        color = if (state == VoiceState.LISTENING) Color.Black else Color.White
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(7.dp)
+                    ) {
+                        // LED Blanco puro (Encendido y Apagado)
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.size(10.dp)) {
+                            if (isListening) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(11.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.White.copy(alpha = 0.5f * roundLedGlow))
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.5.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.White)
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0x35FFFFFF))
+                                        .border(0.6.dp, Color(0x40000000), CircleShape)
+                                )
+                            }
+                        }
+
+                        Text(
+                            text = if (isListening) "EN VIVO (ESCUCHANDO)" else "🎙 TOCAR PARA HABLAR",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Black,
+                            fontFamily = FontFamily.Monospace,
+                            color = Color.White
+                        )
+                    }
                 }
             }
         } else {
@@ -4279,6 +4366,121 @@ private fun AgendaScreen(voiceManager: JarvisVoiceManager, isRound: Boolean = fa
     }
 }
 
+// ==================== INSTRUMENTACIÓN: BRÚJULA TÁCTICA GIRATORIA EN VIVO ====================
+@Composable
+private fun TacticalCompassDial(
+    headingDegrees: Int,
+    cardinalDirection: String,
+    modifier: Modifier = Modifier,
+    dialSize: Int = 74
+) {
+    var targetAngle by remember { mutableFloatStateOf(headingDegrees.toFloat()) }
+    LaunchedEffect(headingDegrees) {
+        val current = targetAngle
+        val target = headingDegrees.toFloat()
+        var delta = (target - current) % 360f
+        if (delta > 180f) delta -= 360f
+        else if (delta < -180f) delta += 360f
+        targetAngle = current + delta
+    }
+    val animatedHeading by animateFloatAsState(
+        targetValue = targetAngle,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "compassNeedleSpring"
+    )
+
+    Box(
+        modifier = modifier.size(dialSize.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        // Cuadrante estático con bisel táctico y marcas de grados perimetrales
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val center = Offset(size.width / 2f, size.height / 2f)
+            val radius = size.minDimension / 2f - 3.dp.toPx()
+
+            // Fondo circular OLED profundo
+            drawCircle(
+                color = Color(0xFF0C1017),
+                radius = radius,
+                center = center
+            )
+            // Anillo exterior de titanio anodizado
+            drawCircle(
+                color = Color(0xFF2B3742),
+                radius = radius,
+                center = center,
+                style = Stroke(width = 2.dp.toPx())
+            )
+            // Anillo secundario interior
+            drawCircle(
+                color = Color(0xFF1B242C),
+                radius = radius * 0.72f,
+                center = center,
+                style = Stroke(width = 1.dp.toPx())
+            )
+
+            // 12 marcas de rumbo (cada 30 grados)
+            for (i in 0 until 12) {
+                val angleDeg = i * 30.0
+                val angleRad = Math.toRadians(angleDeg)
+                val isCardinal = i % 3 == 0
+                val tickLen = if (isCardinal) 6.dp.toPx() else 3.5.dp.toPx()
+                val tickColor = if (i == 0) Color(0xFFFF5722) else Color(0xFF78909C)
+
+                val startX = (center.x + (radius - tickLen) * Math.sin(angleRad)).toFloat()
+                val startY = (center.y - (radius - tickLen) * Math.cos(angleRad)).toFloat()
+                val endX = (center.x + radius * Math.sin(angleRad)).toFloat()
+                val endY = (center.y - radius * Math.cos(angleRad)).toFloat()
+
+                drawLine(
+                    color = tickColor,
+                    start = Offset(startX, startY),
+                    end = Offset(endX, endY),
+                    strokeWidth = if (isCardinal) 2.2.dp.toPx() else 1.2.dp.toPx()
+                )
+            }
+        }
+
+        // Aguja magnética que gira en tiempo real hacia el Norte magnético
+        Canvas(
+            modifier = Modifier
+                .fillMaxSize()
+                .rotate(animatedHeading)
+        ) {
+            val center = Offset(size.width / 2f, size.height / 2f)
+            val needleLen = size.minDimension / 2f - 7.dp.toPx()
+            val needleWidth = 5.dp.toPx()
+
+            // Flecha Norte (Naranja CDPE táctico de alta visibilidad)
+            val northPath = Path().apply {
+                moveTo(center.x, center.y - needleLen)
+                lineTo(center.x + needleWidth, center.y)
+                lineTo(center.x, center.y - 2.5.dp.toPx())
+                lineTo(center.x - needleWidth, center.y)
+                close()
+            }
+            drawPath(northPath, color = Color(0xFFFF5722))
+
+            // Flecha Sur (Plata / Acero templado)
+            val southPath = Path().apply {
+                moveTo(center.x, center.y + needleLen)
+                lineTo(center.x + needleWidth, center.y)
+                lineTo(center.x, center.y + 2.5.dp.toPx())
+                lineTo(center.x - needleWidth, center.y)
+                close()
+            }
+            drawPath(southPath, color = Color(0xFF90A4AE))
+
+            // Pivote central de latón / rodamiento
+            drawCircle(color = Color(0xFF14181E), radius = 4.5.dp.toPx(), center = center)
+            drawCircle(color = Color(0xFFFFD54F), radius = 2.dp.toPx(), center = center)
+        }
+    }
+}
+
 // ==================== MODO 2: RELOJ, CLIMA Y TELEMETRÍA COMPLETA ====================
 @Composable
 private fun StandbyScreen(
@@ -4289,43 +4491,43 @@ private fun StandbyScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = if (isRound) 10.dp else 8.dp, vertical = if (isRound) 6.dp else 8.dp),
+            .padding(horizontal = if (isRound) 8.dp else 10.dp, vertical = if (isRound) 4.dp else 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.SpaceBetween
     ) {
-        // Cabecera superior
+        // Cabecera superior institucional
         Text(
-            text = "CDPE SMARTWATCH",
-            fontSize = if (isRound) 11.sp else 12.sp,
+            text = "CDPE SMARTWATCH · TELEMETRÍA",
+            fontSize = if (isRound) 9.5.sp else 11.sp,
             fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.Black,
             color = Color(0xFFE25227)
         )
 
-        // Clima del lugar actual y reloj digital de gran formato
+        // Reloj digital con clima local de donde se encuentra
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             val place = telemetry.localityName
             val temp = telemetry.temperatureCelsius?.roundToInt() ?: 24
             val cond = telemetry.weatherCondition
             Text(
-                text = "$place $temp°C · $cond".uppercase(),
-                fontSize = if (isRound) 10.5.sp else 11.5.sp,
+                text = "$place · $temp°C $cond".uppercase(),
+                fontSize = if (isRound) 10.sp else 11.sp,
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
-                color = Color(0xFF00E5FF),
+                color = Color(0xFFFFD54F),
                 textAlign = TextAlign.Center
             )
-            Spacer(modifier = Modifier.height(2.dp))
+            Spacer(modifier = Modifier.height(1.dp))
             Text(
                 text = telemetry.timeFormatted.take(5),
-                fontSize = if (isRound) 36.sp else 42.sp,
+                fontSize = if (isRound) 32.sp else 38.sp,
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Black,
                 color = Color.White
             )
             Text(
                 text = telemetry.dateFormatted,
-                fontSize = if (isRound) 10.sp else 11.5.sp,
+                fontSize = if (isRound) 9.5.sp else 10.5.sp,
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
                 color = Color(0xFFB0BEC5),
@@ -4333,68 +4535,172 @@ private fun StandbyScreen(
             )
         }
 
-        // ==================== RECUADRO DE TELEMETRÍA (REEMPLAZA A 'TOCA MICRO PARA HABLAR') ====================
+        // ==================== INSTRUMENTACIÓN TÁCTICA: BRÚJULA EN VIVO + TELEMETRÍA ====================
         Box(
             modifier = Modifier
-                .fillMaxWidth(if (isRound) 0.94f else 1f)
+                .fillMaxWidth(if (isRound) 0.96f else 1f)
                 .clip(RoundedCornerShape(12.dp))
                 .border(1.5.dp, Color(0xFFE25227), RoundedCornerShape(12.dp))
-                .background(Color(0xFF141720))
-                .padding(horizontal = 10.dp, vertical = 6.dp)
+                .background(Color(0xFF10131A))
+                .padding(horizontal = 8.dp, vertical = 6.dp)
                 .clickable { onOpenSettings() }
         ) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(3.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                // Fila 1: Brújula / Grados en vivo y Batería con su rayito
+            if (isRound) {
+                // Disposición para Smartwatch Redondo
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        TacticalCompassDial(
+                            headingDegrees = telemetry.headingDegrees,
+                            cardinalDirection = telemetry.cardinalDirection,
+                            dialSize = 56
+                        )
+                        Column {
+                            Text(
+                                text = "${telemetry.headingDegrees}° ${telemetry.cardinalDirection}",
+                                fontSize = 14.sp,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Black,
+                                color = Color(0xFF00E676)
+                            )
+                            Text(
+                                text = "RUMBO MAGNÉTICO",
+                                fontSize = 8.sp,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF78909C)
+                            )
+                            Text(
+                                text = "${telemetry.batteryLevel}% ${if (telemetry.isCharging) "⚡" else "🔋"}",
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Black,
+                                color = if (telemetry.batteryLevel > 20) Color(0xFF00E5FF) else Color(0xFFFF5252)
+                            )
+                        }
+                    }
+
+                    val locStr = if (telemetry.latitude != null && telemetry.longitude != null) {
+                        val lat = String.format(Locale.US, "%.3f", telemetry.latitude)
+                        val lon = String.format(Locale.US, "%.3f", telemetry.longitude)
+                        val alt = if (telemetry.altitude != null) " · ${telemetry.altitude.roundToInt()}m" else ""
+                        "📍 $lat, $lon$alt"
+                    } else {
+                        "📍 GPS satelital buscando fix..."
+                    }
+                    Text(
+                        text = locStr,
+                        fontSize = 9.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFFFD54F),
+                        textAlign = TextAlign.Center
+                    )
+
+                    Text(
+                        text = "💧 Hum: ${telemetry.humidityPercent ?: 65}% · 🌤 ${telemetry.weatherCondition}",
+                        fontSize = 8.5.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = Color(0xFFB0BEC5),
+                        textAlign = TextAlign.Center
+                    )
+                }
+            } else {
+                // Disposición para Pantalla Rectangular (Cockpit Táctico Completo)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Text(
-                        text = "🧭 ${telemetry.headingDegrees}° ${telemetry.cardinalDirection}",
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Black,
-                        color = Color(0xFF00E676)
-                    )
-                    Text(
-                        text = "${telemetry.batteryLevel}% ${if (telemetry.isCharging) "⚡" else "🔋"}",
-                        fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Black,
-                        color = if (telemetry.batteryLevel > 20) Color(0xFF00E5FF) else Color(0xFFFF5252)
-                    )
-                }
+                    // Columna Izquierda: Brújula táctica real giratoria
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.width(76.dp)
+                    ) {
+                        TacticalCompassDial(
+                            headingDegrees = telemetry.headingDegrees,
+                            cardinalDirection = telemetry.cardinalDirection,
+                            dialSize = 64
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "${telemetry.headingDegrees}° ${telemetry.cardinalDirection}",
+                            fontSize = 12.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Black,
+                            color = Color(0xFF00E676)
+                        )
+                        Text(
+                            text = "RUMBO",
+                            fontSize = 8.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF78909C)
+                        )
+                    }
 
-                // Fila 2: Coordenadas GPS exactas del lugar donde se encuentra
-                val locStr = if (telemetry.latitude != null && telemetry.longitude != null) {
-                    val lat = String.format(Locale.US, "%.3f", telemetry.latitude)
-                    val lon = String.format(Locale.US, "%.3f", telemetry.longitude)
-                    val alt = if (telemetry.altitude != null) " · ${telemetry.altitude.roundToInt()}m" else ""
-                    "📍 $lat, $lon$alt"
-                } else {
-                    "📍 GPS satelital buscando fix..."
-                }
-                Text(
-                    text = locStr,
-                    fontSize = 10.sp,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFFFFD54F)
-                )
+                    // Columna Derecha: Bloques de telemetría GPS, Batería y Clima
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.5.dp)
+                    ) {
+                        // Batería con rayito y porcentaje
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "ENERGÍA",
+                                fontSize = 8.5.sp,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Black,
+                                color = Color(0xFF78909C)
+                            )
+                            Text(
+                                text = "${telemetry.batteryLevel}% ${if (telemetry.isCharging) "⚡ CARGANDO" else "🔋 BATERÍA"}",
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Black,
+                                color = if (telemetry.batteryLevel > 20) Color(0xFF00E5FF) else Color(0xFFFF5252)
+                            )
+                        }
 
-                // Fila 3: Humedad y Clima local
-                Text(
-                    text = "💧 Humedad: ${telemetry.humidityPercent ?: 65}% · 🌤 ${telemetry.weatherCondition}",
-                    fontSize = 9.5.sp,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Medium,
-                    color = Color(0xFFB0BEC5)
-                )
+                        // Coordenadas GPS y Altitud sobre el nivel del mar
+                        val locStr = if (telemetry.latitude != null && telemetry.longitude != null) {
+                            val lat = String.format(Locale.US, "%.3f", telemetry.latitude)
+                            val lon = String.format(Locale.US, "%.3f", telemetry.longitude)
+                            val alt = if (telemetry.altitude != null) "${telemetry.altitude.roundToInt()}m" else "N/D"
+                            "📍 $lat°, $lon°\n🏔 Alt: $alt SNM"
+                        } else {
+                            "📍 GPS buscando satélites...\n🏔 Altitud sincronizando"
+                        }
+                        Text(
+                            text = locStr,
+                            fontSize = 9.5.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFFFD54F),
+                            lineHeight = 12.5.sp
+                        )
+
+                        // Humedad, Clima y Barómetro
+                        Text(
+                            text = "💧 Hum: ${telemetry.humidityPercent ?: 65}% · 🌤 ${telemetry.weatherCondition}",
+                            fontSize = 8.5.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Medium,
+                            color = Color(0xFFB0BEC5)
+                        )
+                    }
+                }
             }
         }
 
