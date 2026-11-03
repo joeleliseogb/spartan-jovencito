@@ -2150,6 +2150,7 @@ private fun MultiSpeakerDiarizationVisualizer(
             Canvas(modifier = Modifier.fillMaxSize()) {
                 val w = size.width
                 val h = size.height
+                if (w <= 0f || h <= 0f) return@Canvas
                 val zoneW = w / 4f
 
                 // Líneas horizontales de referencia (-12dB, -6dB)
@@ -2181,7 +2182,7 @@ private fun MultiSpeakerDiarizationVisualizer(
                         val midX = (startX + endX) / 2f
                         val peakY = h * (1f - maxBar.coerceIn(0.12f, 0.88f))
                         moveTo(startX, h - 14.dp.toPx())
-                        quadraticBezierTo(midX, peakY, endX, h - 14.dp.toPx())
+                        quadraticTo(midX, peakY, endX, h - 14.dp.toPx())
                         close()
                     }
                     drawPath(
@@ -3568,8 +3569,11 @@ private fun CassetteReel(rotation: Float) {
         contentAlignment = Alignment.Center
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
-            drawCircle(color = Color(0xFF2C3242), radius = size.minDimension / 2)
-            drawCircle(color = Color(0xFF141722), radius = size.minDimension / 3.2f)
+            if (size.minDimension <= 0f) return@Canvas
+            val rOuter = (size.minDimension / 2).coerceAtLeast(1f)
+            val rInner = (size.minDimension / 3.2f).coerceAtLeast(0.5f)
+            drawCircle(color = Color(0xFF2C3242), radius = rOuter)
+            drawCircle(color = Color(0xFF141722), radius = rInner)
             val spokes = 6
             for (i in 0 until spokes) {
                 val angle = Math.toRadians((i * (360.0 / spokes)).toDouble())
@@ -3732,6 +3736,7 @@ private fun VideoPlayerScreen(isRound: Boolean = false) {
             } else {
                 // Monitor CRT visualizer / Demo viewfinder
                 Canvas(modifier = Modifier.fillMaxSize()) {
+                    if (size.width <= 0f || size.height <= 0f) return@Canvas
                     var y = 0f
                     while (y < size.height) {
                         drawLine(
@@ -5276,8 +5281,9 @@ private fun TacticalCompassDial(
     ) {
         // Cuadrante estático con bisel táctico y marcas de grados perimetrales
         Canvas(modifier = Modifier.fillMaxSize()) {
+            if (size.width <= 0f || size.height <= 0f || size.minDimension <= 10.dp.toPx()) return@Canvas
             val center = Offset(size.width / 2f, size.height / 2f)
-            val radius = size.minDimension / 2f - 3.dp.toPx()
+            val radius = (size.minDimension / 2f - 3.dp.toPx()).coerceAtLeast(1f)
 
             // Fondo circular OLED profundo
             drawCircle(
@@ -5295,7 +5301,7 @@ private fun TacticalCompassDial(
             // Anillo secundario interior
             drawCircle(
                 color = Color(0xFF1B242C),
-                radius = radius * 0.72f,
+                radius = (radius * 0.72f).coerceAtLeast(1f),
                 center = center,
                 style = Stroke(width = 1.dp.toPx())
             )
@@ -5328,9 +5334,10 @@ private fun TacticalCompassDial(
                 .fillMaxSize()
                 .rotate(animatedHeading)
         ) {
+            if (size.width <= 0f || size.height <= 0f || size.minDimension <= 15.dp.toPx()) return@Canvas
             val center = Offset(size.width / 2f, size.height / 2f)
-            val needleLen = size.minDimension / 2f - 7.dp.toPx()
-            val needleWidth = 5.dp.toPx()
+            val needleLen = (size.minDimension / 2f - 7.dp.toPx()).coerceAtLeast(1f)
+            val needleWidth = (5.dp.toPx()).coerceAtLeast(1f)
 
             // Flecha Norte (Naranja CDPE táctico de alta visibilidad)
             val northPath = Path().apply {
@@ -5353,8 +5360,8 @@ private fun TacticalCompassDial(
             drawPath(southPath, color = Color(0xFF90A4AE))
 
             // Pivote central de latón / rodamiento
-            drawCircle(color = Color(0xFF14181E), radius = 4.5.dp.toPx(), center = center)
-            drawCircle(color = Color(0xFFFFD54F), radius = 2.dp.toPx(), center = center)
+            drawCircle(color = Color(0xFF14181E), radius = (4.5.dp.toPx()).coerceAtLeast(1f), center = center)
+            drawCircle(color = Color(0xFFFFD54F), radius = (2.dp.toPx()).coerceAtLeast(0.5f), center = center)
         }
     }
 }
@@ -5438,17 +5445,22 @@ private fun RealisticWatchFaceScreen(
                 // Sombra de curvatura de cristal mineral en el perímetro exterior
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     val r = size.minDimension / 2f
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            0.76f to Color.Transparent,
-                            0.93f to if (isOledDark) Color(0x33000000) else Color(0x12000000),
-                            1.0f to if (isOledDark) Color(0x66000000) else Color(0x28000000),
-                            center = center,
-                            radius = r
-                        ),
-                        radius = r,
-                        center = center
-                    )
+                    if (r <= 1f) return@Canvas
+                    try {
+                        drawCircle(
+                            brush = Brush.radialGradient(
+                                0.76f to Color.Transparent,
+                                0.93f to if (isOledDark) Color(0x33000000) else Color(0x12000000),
+                                1.0f to if (isOledDark) Color(0x66000000) else Color(0x28000000),
+                                center = center,
+                                radius = r.coerceAtLeast(1f)
+                            ),
+                            radius = r,
+                            center = center
+                        )
+                    } catch (e: Exception) {
+                        // Ignorar fallo transitorio durante redimensionamiento
+                    }
                 }
 
                 // Contenido Tipográfico Minimalista (Exacto a la foto)
@@ -5497,12 +5509,13 @@ private fun RealisticWatchFaceScreen(
                         Canvas(modifier = Modifier.size(if (isRound) 22.dp else 25.dp)) {
                             val w = size.width
                             val h = size.height
+                            if (w <= 1f || h <= 1f) return@Canvas
                             val iconColor = textColor.copy(alpha = 0.88f)
 
                             // Sol detrás
                             drawCircle(
                                 color = iconColor,
-                                radius = w * 0.17f,
+                                radius = (w * 0.17f).coerceAtLeast(0.5f),
                                 center = Offset(w * 0.62f, h * 0.36f),
                                 style = Stroke(width = 1.6f)
                             )

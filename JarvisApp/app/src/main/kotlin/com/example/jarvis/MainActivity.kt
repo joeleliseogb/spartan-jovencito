@@ -46,6 +46,14 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // Manejador global de excepciones para prevenir cierres abruptos silenciosos
+        val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            android.util.Log.e("JarvisApp", "CRITICAL_UNCAUGHT_EXCEPTION in ${thread.name}: ${throwable.message}", throwable)
+            defaultHandler?.uncaughtException(thread, throwable)
+        }
+
         enableEdgeToEdge()
 
         // MODO INMERSIVO TOTAL (Ocultar botones de navegación y barra de estado de Android)
