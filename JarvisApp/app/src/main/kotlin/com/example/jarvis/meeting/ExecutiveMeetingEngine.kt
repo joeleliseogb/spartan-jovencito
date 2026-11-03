@@ -269,9 +269,11 @@ class ExecutiveMeetingEngine(
 
         // 7. Guardar en carpeta pública y registrar en Android MediaScanner
         val actaFile = File(publicMeetingsDir, "Acta_$timeStamp.txt")
+        val transcriptFile = File(publicMeetingsDir, "Transcripcion_$timeStamp.txt")
         try {
             actaFile.writeText(actaContent)
-            val filesToScan = mutableListOf(actaFile.absolutePath)
+            transcriptFile.writeText(parsedTranscriptText)
+            val filesToScan = mutableListOf(actaFile.absolutePath, transcriptFile.absolutePath)
             associatedAudioFile?.let { if (it.exists()) filesToScan.add(it.absolutePath) }
             MediaScannerConnection.scanFile(context, filesToScan.toTypedArray(), null, null)
         } catch (e: Exception) {

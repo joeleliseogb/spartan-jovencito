@@ -5326,10 +5326,11 @@ private fun MinutesScreen(
                     .clip(RoundedCornerShape(if (isRound) 16.dp else 8.dp))
                     .background(Color(0xFF1A237E))
                     .clickable {
-                        val textToCopy = if (lastExecutiveReport != null && selectedMeetingTab == 0) {
-                            lastExecutiveReport?.fullActaText ?: ""
+                        val textToCopy = if (lastExecutiveReport != null) {
+                            if (selectedMeetingTab == 0) lastExecutiveReport?.fullActaText ?: ""
+                            else lastExecutiveReport?.fullTranscription ?: ""
                         } else {
-                            history.joinToString("\n\n") { "${if (it.role == "user") "Hablante" else "Asistente"}: ${it.text}" }
+                            history.joinToString("\n\n") { "${if (it.role == "user") "JOEL" else "CLIENTE"}: ${it.text}" }
                         }
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                         val clip = android.content.ClipData.newPlainText("Transcripción CDPE", textToCopy)
@@ -5347,10 +5348,11 @@ private fun MinutesScreen(
                     .clip(RoundedCornerShape(if (isRound) 16.dp else 8.dp))
                     .background(Color(0xFF263238))
                     .clickable {
-                        val textToShare = if (lastExecutiveReport != null && selectedMeetingTab == 0) {
-                            lastExecutiveReport?.fullActaText ?: ""
+                        val textToShare = if (lastExecutiveReport != null) {
+                            if (selectedMeetingTab == 0) lastExecutiveReport?.fullActaText ?: ""
+                            else lastExecutiveReport?.fullTranscription ?: ""
                         } else {
-                            "--- ACTAS Y MINUTAS CDPE ---\n\n" + history.joinToString("\n\n") { "${if (it.role == "user") "Hablante" else "Asistente"}: ${it.text}" }
+                            "--- TRANSCRIPCIÓN CDPE ---\n\n" + history.joinToString("\n\n") { "${if (it.role == "user") "JOEL" else "CLIENTE"}: ${it.text}" }
                         }
                         val sendIntent = Intent(Intent.ACTION_SEND).apply {
                             type = "text/plain"
