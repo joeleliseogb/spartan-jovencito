@@ -2067,6 +2067,207 @@ Estructura tu respuesta exactamente así, sin saludos ni preámbulos:
         }
     }
 
+    /**
+     * ENTREGABLE 2: Transcripción Literal Pura (palabra por palabra)
+     * Procesa el audio con Gemini para obtener el diálogo exacto, sin resúmenes.
+     * Identifica estrictamente al líder como "Director:" y separa a los interlocutores.
+     */
+    suspend fun transcribeAudioFileLiteral(file: File, forceCloud: Boolean = false): String = withContext(Dispatchers.IO) {
+        try {
+            if (!file.exists() || file.length() == 0L) {
+                return@withContext "El archivo de audio está vacío o no se encontró."
+            }
+
+            val cleanName = file.nameWithoutExtension.removePrefix("reunion_").removePrefix("Literal_").removePrefix("Acta_")
+            val companionLiteralFiles = listOfNotNull(
+                File(file.parentFile, "Literal_${file.nameWithoutExtension}.txt"),
+                File(file.parentFile, "Literal_$cleanName.txt"),
+                File(file.parentFile, "${file.nameWithoutExtension}.txt"),
+                File(android.os.Environment.getExternalStoragePublicDirectory("Recordings"), "JOWELL/Literal_$cleanName.txt"),
+                File(android.os.Environment.getExternalStoragePublicDirectory("Recordings"), "JOWELL/Reuniones/Literal_$cleanName.txt")
+            )
+            val existingLocal = companionLiteralFiles.firstOrNull { it.exists() && it.length() > 5 }?.readText()?.trim()
+            if (!forceCloud && !existingLocal.isNullOrBlank() && !existingLocal.contains("[No se registraron")) {
+                return@withContext existingLocal
+            }
+
+            val effectiveKey = getEffectiveApiKey()
+            var cloudText: String? = null
+            var lastHttpCode = 0
+
+            try {
+                val bytes = file.readBytes()
+                val base64Data = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                val mimeType = "audio/mp4"
+
+                val promptText = """
+Eres el estenógrafo y transcriptor oficial del Director (CDPE Guatemala).
+Analiza este archivo de audio grabado en sala real con la máxima fidelidad acústica:
+
+TRATAMIENTO ACÚSTICO:
+1. CANCELACIÓN DE RUIDO Y ESTÁTICA: Anula ruidos de mesa, eco y zumbidos de sala.
+2. GANANCIA (+20 dB): Amplifica las voces bajas o lejanas para captar cada palabra en español.
+3. DIARIZACIÓN EXACTA: Separa rigurosamente las intervenciones por persona:
+   - Identifica al líder de la reunión ÚNICAMENTE como "Director:". NUNCA menciones nombres propios personales.
+   - Identifica a los demás interlocutores como "Cliente:", "Socio:", "Interlocutor 1:", "Interlocutor 2:", etc.
+4. TRANSCRIPCIÓN LITERAL PURA:
+   Escribe exactamente palabra por palabra lo que dijeron los oradores.
+   NO agregues resúmenes, no agregues fechas ni agendas, no agregues conclusiones ni preámbulos.
+   Entrega únicamente el diálogo literal continuo en español.
+""".trimIndent()
+
+                val json = JSONObject().apply {
+                    put("contents", JSONArray().apply {
+                        put(JSONObject().apply {
+                            put("role", "user")
+                            put("parts", JSONArray().apply {
+                                put(JSONObject().apply {
+                                    put("inlineData", JSONObject().apply {
+                                        put("mimeType", mimeType)
+                                        put("data", base64Data)
+                                    })
+                                })
+                                put(JSONObject().apply {
+                                    put("text", promptText)
+                                })
+                            })
+                        })
+                    })
+                }
+
+                val mediaType = "application/json; charset=utf-8".toMediaType()
+                val body = json.toString().toRequestBody(mediaType)
+                val url = "https://generativelanguage.googleapis.com/v1beta/models/${com.example.jarvis.api.GeminiConfig.MODEL_NAME}:generateContent?key=$effectiveKey"
+                val request = Request.Builder().url(url).post(body).build()
+
+                val response = audioTranscribeClient.newCall(request).execute()
+                lastHttpCode = response.code
+                val respBody = response.body?.string() ?: ""
+
+                if (response.isSuccessful) {
+                    val root = JSONObject(respBody)
+                    val candidates = root.optJSONArray("candidates")
+                    val candidate = candidates?.optJSONObject(0)
+                    val content = candidate?.optJSONObject("content")
+                    val parts = content?.optJSONArray("parts")
+                    val text = parts?.optJSONObject(0)?.optString("text")?.trim() ?: ""
+                    if (text.isNotBlank()) {
+                        cloudText = text
+                        try {
+                            val literalFile = File(file.parentFile, "Literal_${file.nameWithoutExtension}.txt")
+                            literalFile.writeText(text)
+                            android.media.MediaScannerConnection.scanFile(context, arrayOf(literalFile.absolutePath), null, null)
+                            val compTxt = File(file.parentFile, "${file.nameWithoutExtension}.txt")
+                            compTxt.writeText(text)
+                            android.media.MediaScannerConnection.scanFile(context, arrayOf(compTxt.absolutePath), null, null)
+                        } catch (e: Exception) {}
+
+                        return@withContext cloudText
+                    }
+                } else {
+                    Log.w("Siri", "Fallo al transcribir literal con IA: HTTP $lastHttpCode - $respBody")
+                }
+            } catch (e: Exception) {
+                Log.w("Siri", "Fallo al consultar IA en la nube: ${e.message}")
+            }
+
+            if (!existingLocal.isNullOrBlank()) {
+                return@withContext existingLocal
+            }
+
+            return@withContext "Transcripción literal no completada. Verifica tu conexión a internet e intenta nuevamente."
+        } catch (e: Exception) {
+            Log.e("Siri", "Error en transcripción literal", e)
+            return@withContext "Error: ${e.localizedMessage ?: "Fallo de conexión"}"
+        }
+    }
+
+    /**
+     * ENTREGABLE 3: Procesamiento del texto literal con IA para generar el Acta y Minuta Ejecutiva.
+     * Analiza el diálogo literal, rescata puntos esenciales, acuerdos y citas, y agenda eventos.
+     */
+    suspend fun generateExecutiveMinutesFromLiteral(
+        literalText: String,
+        audioFile: File? = null,
+        durationSeconds: Long = 0L
+    ): com.example.jarvis.meeting.ExecutiveMeetingReport = withContext(Dispatchers.IO) {
+        val effectiveKey = getEffectiveApiKey()
+        var minutesReportText = ""
+
+        if (effectiveKey.isNotBlank() && literalText.isNotBlank()) {
+            try {
+                val promptText = """
+Eres el secretario ejecutivo de alta dirección del Director (CDPE Guatemala).
+A continuación tienes la TRANSCRIPCIÓN LITERAL de una reunión de negocios:
+
+----------------------------------------------------------------------
+$literalText
+----------------------------------------------------------------------
+
+Analiza exhaustivamente el diálogo y redacta el ACTA Y MINUTA EJECUTIVA OFICIAL con la siguiente estructura:
+1. Refiérete y etiqueta al líder ÚNICAMENTE como "Director" (NUNCA menciones nombres propios personales).
+2. Sé fiel y directo con lo que ocurrió en la conversación; no inventes acuerdos ficticios ni agregues datos inexistentes.
+
+Estructura estricta:
+📌 1. RESUMEN EJECUTIVO
+(1 a 3 viñetas breves con lo realmente acontecido)
+
+🔑 2. PUNTOS ESENCIALES DISCUTIDOS
+(Viñetas con los temas principales analizados por el Director y los interlocutores)
+
+🤝 3. ACUERDOS Y COMPROMISOS
+(Los acuerdos concretos pactados, o "Sin acuerdos en este fragmento")
+
+📅 4. CITAS Y AGENDAS PROGRAMADAS
+(Fechas y horas acordadas para dar seguimiento, o "Sin citas ni eventos mencionados")
+""".trimIndent()
+
+                val json = JSONObject().apply {
+                    put("contents", JSONArray().apply {
+                        put(JSONObject().apply {
+                            put("role", "user")
+                            put("parts", JSONArray().apply {
+                                put(JSONObject().apply {
+                                    put("text", promptText)
+                                })
+                            })
+                        })
+                    })
+                }
+
+                val mediaType = "application/json; charset=utf-8".toMediaType()
+                val body = json.toString().toRequestBody(mediaType)
+                val url = "https://generativelanguage.googleapis.com/v1beta/models/${com.example.jarvis.api.GeminiConfig.MODEL_NAME}:generateContent?key=$effectiveKey"
+                val request = Request.Builder().url(url).post(body).build()
+
+                val response = audioTranscribeClient.newCall(request).execute()
+                if (response.isSuccessful) {
+                    val root = JSONObject(response.body?.string() ?: "")
+                    val candidates = root.optJSONArray("candidates")
+                    val candidate = candidates?.optJSONObject(0)
+                    val content = candidate?.optJSONObject("content")
+                    val parts = content?.optJSONArray("parts")
+                    val text = parts?.optJSONObject(0)?.optString("text")?.trim() ?: ""
+                    if (text.isNotBlank()) {
+                        minutesReportText = text
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w("Siri", "Fallo generando acta ejecutiva con IA: ${e.message}")
+            }
+        }
+
+        val directReport = if (minutesReportText.isNotBlank()) minutesReportText else literalText
+        val report = meetingEngine.processMeeting(
+            history = emptyList(),
+            associatedAudioFile = audioFile,
+            durationSeconds = durationSeconds,
+            directAiTranscript = directReport
+        )
+        _lastMeetingReport.value = report
+        report
+    }
+
     private fun speak(text: String) {
         if (!isTtsReady || textToSpeech == null) {
             Log.w("Siri", "TTS no está listo aún")

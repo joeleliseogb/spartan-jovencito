@@ -2592,7 +2592,7 @@ private fun RecorderScreen(voiceManager: JarvisVoiceManager, isRound: Boolean = 
         isTranscribing = true
         transcriptionText = null
         scope.launch {
-            val result = voiceManager.transcribeAudioFile(target)
+            val result = voiceManager.transcribeAudioFileLiteral(target, forceCloud = true)
             transcriptionText = result
             isTranscribing = false
         }
@@ -2789,11 +2789,11 @@ private fun RecorderScreen(voiceManager: JarvisVoiceManager, isRound: Boolean = 
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "TRANSCRIPCIÓN EJECUTIVA",
-                            fontSize = 11.sp,
+                            text = "📝 ENTREGABLE 2: TRANSCRIPCIÓN LITERAL",
+                            fontSize = 10.5.sp,
                             fontWeight = FontWeight.Black,
                             fontFamily = FontFamily.Monospace,
-                            color = Color(0xFF82B1FF)
+                            color = Color(0xFF00E5FF)
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(
@@ -2819,6 +2819,27 @@ private fun RecorderScreen(voiceManager: JarvisVoiceManager, isRound: Boolean = 
                         color = Color.White,
                         lineHeight = 18.sp
                     )
+
+                    // Botón directo para pasar al módulo Actas y Minutas y generar el Acta oficial con IA
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(Color(0xFF00897B))
+                            .clickable {
+                                voiceManager.setAppMode(JarvisMode.MINUTES)
+                            }
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "📋 CREAR ACTA Y MINUTA CON ESTE TEXTO ➔",
+                            fontSize = 10.5.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Black,
+                            color = Color.White
+                        )
+                    }
 
                     // Botón de acción directa si la API key requiere configuración manual
                     if (transcriptionText?.contains("HTTP 403") == true || voiceManager.getEffectiveApiKey().isBlank()) {
@@ -4591,7 +4612,7 @@ private fun extractPdfOrTextContent(bytes: ByteArray): List<String> {
     return results
 }
 
-// ==================== MODO 5: TRANSCRIPTOR DE CONVERSACIONES Y MINUTAS ====================
+// ==================== MODO 5: ACTAS Y MINUTAS EJECUTIVAS (PROCESADOR IA DE 3 ENTREGABLES) ====================
 @Composable
 private fun MinutesScreen(
     voiceManager: JarvisVoiceManager,
@@ -4601,25 +4622,9 @@ private fun MinutesScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val history by voiceManager.conversationHistoryList.collectAsState()
-    val isMeetingModeActive by voiceManager.isMeetingModeActive.collectAsState()
-    var isRecordingAudio by remember { mutableStateOf(false) }
-    val isSessionActive = isMeetingModeActive || isRecordingAudio
-    var isAiProcessing by remember { mutableStateOf(false) }
-    var mediaRecorder by remember { mutableStateOf<MediaRecorder?>(null) }
-    var currentMeetingAudioFile by remember { mutableStateOf<File?>(null) }
-    var currentMeetingTxtFile by remember { mutableStateOf<File?>(null) }
-    var meetingSavedMessage by remember { mutableStateOf<String?>(null) }
-    var recordingSeconds by remember { mutableLongStateOf(0L) }
-    var previewPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
-    var isPreviewPlaying by remember { mutableStateOf(false) }
-    val lastExecutiveReport by voiceManager.lastMeetingReport.collectAsState()
-    var selectedMeetingTab by remember { mutableIntStateOf(0) }
 
-    val powerManager = remember { context.getSystemService(Context.POWER_SERVICE) as? PowerManager }
-    var wakeLock by remember { mutableStateOf<PowerManager.WakeLock?>(null) }
-
-    fun getMeetingAndRecorderAudios(): List<File> {
+    // 1. Obtener todas las grabaciones realizadas por la grabadora
+    fun getRecordings(): List<File> {
         val list = mutableListOf<File>()
         try {
             val base = Environment.getExternalStoragePublicDirectory("Recordings")
@@ -4638,273 +4643,205 @@ private fun MinutesScreen(
         return list.sortedByDescending { it.lastModified() }
     }
 
-    var availableAudios by remember { mutableStateOf(getMeetingAndRecorderAudios()) }
-    var audioSelectIndex by remember { mutableIntStateOf(0) }
+    var availableRecordings by remember { mutableStateOf(getRecordings()) }
+    var selectedAudioFile by remember { mutableStateOf(availableRecordings.firstOrNull()) }
     var showAudioPicker by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
-        // Al entrar a Actas y Minutas, apagar de inmediato el escuchador conversacional para evitar cualquier ding de Android
-        voiceManager.stopConversationMode()
-        val audios = getMeetingAndRecorderAudios()
-        availableAudios = audios
-        if (currentMeetingAudioFile == null && audios.isNotEmpty()) {
-            currentMeetingAudioFile = audios.first()
-            meetingSavedMessage = "Audio CDPE: ${audios.first().name}"
+    // 2. Estados de los 3 Entregables:
+    // Tab 0: 🎵 Audio de Estudio
+    // Tab 1: 📝 Transcripción Literal
+    // Tab 2: 📋 Acta y Minuta IA
+    var selectedTab by remember { mutableIntStateOf(2) }
+
+    var literalText by remember { mutableStateOf<String?>(null) }
+    var actaText by remember { mutableStateOf<String?>(null) }
+    val lastExecutiveReport by voiceManager.lastMeetingReport.collectAsState()
+    var executiveReport by remember { mutableStateOf<com.example.jarvis.meeting.ExecutiveMeetingReport?>(null) }
+
+    var isAiProcessing by remember { mutableStateOf(false) }
+    var statusMessage by remember { mutableStateOf<String?>(null) }
+
+    // Reproductor de Audio para Entregable 1
+    var audioPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
+    var isPlayingAudio by remember { mutableStateOf(false) }
+    var audioPositionSec by remember { mutableIntStateOf(0) }
+    var audioDurationSec by remember { mutableIntStateOf(0) }
+
+    // Cargar los archivos entregables asociados a la grabación
+    fun loadCompanionDeliverables(audio: File?) {
+        if (audio == null || !audio.exists()) {
+            literalText = null
+            actaText = null
+            executiveReport = null
+            audioDurationSec = 0
+            return
         }
-    }
 
-    DisposableEffect(Unit) {
-        onDispose {
-            try {
-                if (wakeLock?.isHeld == true) wakeLock?.release()
-            } catch (e: Exception) {}
-        }
-    }
+        val clean = audio.nameWithoutExtension.removePrefix("reunion_").removePrefix("Literal_").removePrefix("Acta_")
+        val parent = audio.parentFile ?: Environment.getExternalStoragePublicDirectory("Recordings")
 
-    val speakerZone1 = remember { mutableStateListOf(*Array(7) { 0.15f }) }
-    val speakerZone2 = remember { mutableStateListOf(*Array(7) { 0.12f }) }
-    val speakerZone3 = remember { mutableStateListOf(*Array(7) { 0.10f }) }
-    val speakerZone4 = remember { mutableStateListOf(*Array(7) { 0.08f }) }
-    var activeSpeakerIndex by remember { mutableIntStateOf(0) }
-    var speaker1PeakDb by remember { mutableIntStateOf(9) }
-    var speaker2PeakDb by remember { mutableIntStateOf(4) }
-    var speaker3PeakDb by remember { mutableIntStateOf(3) }
-    var speaker4PeakDb by remember { mutableIntStateOf(5) }
+        // Buscar Entregable 2: Transcripción Literal
+        val literalCandidates = listOf(
+            File(parent, "Literal_${audio.nameWithoutExtension}.txt"),
+            File(parent, "Literal_$clean.txt"),
+            File(parent, "${audio.nameWithoutExtension}.txt"),
+            File(Environment.getExternalStoragePublicDirectory("Recordings"), "JOWELL/Literal_$clean.txt"),
+            File(Environment.getExternalStoragePublicDirectory("Recordings"), "JOWELL/Reuniones/Literal_$clean.txt")
+        )
+        val foundLiteral = literalCandidates.firstOrNull { it.exists() && it.length() > 5 }
+        literalText = foundLiteral?.readText()?.trim()
 
-    LaunchedEffect(isRecordingAudio, isSessionActive) {
-        if (isRecordingAudio || isSessionActive) {
-            recordingSeconds = 0L
-            var tick = 0L
-            while (isRecordingAudio || isSessionActive) {
-                delay(80)
-                tick += 80
-                if (tick % 1000L == 0L) {
-                    recordingSeconds += 1
-                }
-                val rawAmp = try {
-                    mediaRecorder?.maxAmplitude ?: 0
-                } catch (e: Exception) { 0 }
+        // Buscar Entregable 3: Acta y Minuta IA
+        val actaCandidates = listOf(
+            File(parent, "Acta_${audio.nameWithoutExtension}.txt"),
+            File(parent, "Acta_$clean.txt"),
+            File(Environment.getExternalStoragePublicDirectory("Recordings"), "JOWELL/Reuniones/Acta_$clean.txt"),
+            File(Environment.getExternalStoragePublicDirectory("Recordings"), "JOWELL/Acta_$clean.txt")
+        )
+        val foundActa = actaCandidates.firstOrNull { it.exists() && it.length() > 5 }
+        actaText = foundActa?.readText()?.trim()
 
-                // Ganancia digital acústica para salas amplias (amplificación 2.6x)
-                val boostedAmp = (rawAmp * 2.6f).coerceAtMost(32767f)
-                val normalized = (boostedAmp / 32767f).coerceIn(0.08f, 1.0f)
-                val measuredDb = if (rawAmp > 20) {
-                    (20 * kotlin.math.log10(boostedAmp.toDouble())).toInt().coerceIn(12, 95)
-                } else {
-                    12
-                }
-
-                // Diarización y detección acústica real de orador según proximidad y decibeles reales:
-                // >= 55 dB: Joel (Director / Frente al teléfono)
-                // 36 - 54 dB: Cliente / Interlocutor principal
-                // 24 - 35 dB: Sala / Intervención lejana
-                // < 24 dB: Ruido ambiente de fondo / Silencio
-                activeSpeakerIndex = when {
-                    measuredDb >= 55 -> 0
-                    measuredDb >= 36 -> 1
-                    measuredDb >= 24 -> 2
-                    else -> 3
-                }
-
-                speaker1PeakDb = if (activeSpeakerIndex == 0) measuredDb else (measuredDb * 0.45f).toInt().coerceAtLeast(8)
-                speaker2PeakDb = if (activeSpeakerIndex == 1) measuredDb else (measuredDb * 0.40f).toInt().coerceAtLeast(6)
-                speaker3PeakDb = if (activeSpeakerIndex == 2) measuredDb else (measuredDb * 0.35f).toInt().coerceAtLeast(5)
-                speaker4PeakDb = if (activeSpeakerIndex == 3) measuredDb else (measuredDb * 0.30f).toInt().coerceAtLeast(4)
-
-                for (z in 0..3) {
-                    val zone = when (z) {
-                        0 -> speakerZone1
-                        1 -> speakerZone2
-                        2 -> speakerZone3
-                        else -> speakerZone4
-                    }
-                    val bandVal = if (z == activeSpeakerIndex) {
-                        normalized.coerceIn(0.18f, 0.98f)
-                    } else {
-                        (normalized * 0.25f).coerceIn(0.06f, 0.35f)
-                    }
-                    if (zone.size >= 7) {
-                        for (k in 0 until zone.size - 1) {
-                            zone[k] = zone[k + 1]
-                        }
-                        zone[zone.size - 1] = bandVal
-                    } else {
-                        zone.add(bandVal)
-                    }
-                }
-            }
-        }
-    }
-
-    DisposableEffect(Unit) {
-        onDispose {
-            try {
-                mediaRecorder?.stop()
-                mediaRecorder?.release()
-            } catch (e: Exception) {}
-            mediaRecorder = null
-            try {
-                previewPlayer?.release()
-            } catch (e: Exception) {}
-            previewPlayer = null
-        }
-    }
-
-    fun startMeetingSession() {
+        // Duración del audio
         try {
-            val hasPerm = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-            if (!hasPerm) {
-                voiceManager.speakDirectly("Se requiere permiso de micrófono para iniciar la reunión.")
-                meetingSavedMessage = "⚠️ Otorga permiso de micrófono en Ajustes"
-                return
-            }
-
-            val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-            val publicMeetingsDir = try {
-                File(Environment.getExternalStoragePublicDirectory("Recordings"), "JOWELL/Reuniones").also { it.mkdirs() }
-            } catch (e: Throwable) {
-                val appBase = context.getExternalFilesDir("Recordings") ?: context.filesDir
-                File(appBase, "JOWELL/Reuniones").also { it.mkdirs() }
-            }
-            val audioFile = File(publicMeetingsDir, "Reunion_$timeStamp.m4a")
-            val txtFile = File(publicMeetingsDir, "Reunion_$timeStamp.txt")
-            currentMeetingAudioFile = audioFile
-            currentMeetingTxtFile = txtFile
-            meetingSavedMessage = null
-
-            try {
-                previewPlayer?.stop()
-                previewPlayer?.release()
-                previewPlayer = null
-                isPreviewPlaying = false
-            } catch (e: Exception) {}
-
-            // Iniciar grabación física de audio a archivo .m4a con fuente VOICE_RECOGNITION para sala amplia
-            val recorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                MediaRecorder(context)
-            } else {
-                @Suppress("DEPRECATION")
-                MediaRecorder()
-            }.apply {
-                setAudioSource(MediaRecorder.AudioSource.VOICE_RECOGNITION)
-                setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-                setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-                setAudioChannels(1) // Mono para eliminar cancelaciones acústicas de sala
-                setAudioEncodingBitRate(256000) // 256 kbps máxima definición de voz
-                setAudioSamplingRate(48000) // 48 kHz estándar broadcast nativo de hardware
-                setOutputFile(audioFile.absolutePath)
-                prepare()
-                start()
-            }
-            mediaRecorder = recorder
-            isRecordingAudio = true
-
-            try {
-                wakeLock = powerManager?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "JOWELL:MeetingRecordingWakeLock")?.apply {
-                    setReferenceCounted(false)
-                    acquire(8 * 60 * 60 * 1000L) // Protección de hasta 8 hrs con pantalla bloqueada
-                }
-            } catch (e: Throwable) {
-                Log.w("MinutesScreen", "No se pudo adquirir WakeLock", e)
-            }
-
-            // Iniciar transcriptor en modo reunión SILENCIOSO (no habla, no interrumpe a los clientes)
-            voiceManager.startMeetingRecordingMode()
-        } catch (e: Throwable) {
-            Log.e("MinutesScreen", "Error al iniciar sesión de reunión", e)
-            meetingSavedMessage = "Error al iniciar: ${e.message}"
-        }
-    }
-
-    fun stopAndSaveMeetingSession() {
-        try {
-            mediaRecorder?.stop()
-            mediaRecorder?.release()
+            val mmr = android.media.MediaMetadataRetriever()
+            mmr.setDataSource(audio.absolutePath)
+            val durMs = mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLong() ?: 0L
+            mmr.release()
+            audioDurationSec = (durMs / 1000).toInt()
         } catch (e: Exception) {
-            Log.e("MinutesScreen", "Error stopping MediaRecorder", e)
-        }
-        mediaRecorder = null
-        isRecordingAudio = false
-
-        try {
-            if (wakeLock?.isHeld == true) {
-                wakeLock?.release()
-            }
-        } catch (e: Exception) {}
-        wakeLock = null
-
-        voiceManager.stopMeetingRecordingMode()
-
-        val audio = currentMeetingAudioFile
-        if (audio != null && audio.exists() && audio.length() > 0) {
-            MediaScannerConnection.scanFile(context, arrayOf(audio.absolutePath), null, null)
+            audioDurationSec = 0
         }
 
-        meetingSavedMessage = "🎙️ Procesando audio con IA (limpiando ruido de sala y diarizando oradores)..."
-        isAiProcessing = true
-
-        scope.launch(Dispatchers.IO) {
-            try {
-                // Transcripción y diarización real de oradores con Gemini a partir del audio físico grabado
-                val cloudTranscript = if (audio != null && audio.exists() && audio.length() > 500) {
-                    voiceManager.transcribeAudioFile(audio, forceCloud = true)
-                } else null
-
-                val report = voiceManager.finalizeAndProcessMeeting(
-                    audioFile = audio,
-                    durationSeconds = recordingSeconds,
-                    directAiTranscript = cloudTranscript
-                )
-
-                withContext(Dispatchers.Main) {
-                    isAiProcessing = false
-                    selectedMeetingTab = 0
-                    meetingSavedMessage = "✅ Acta y Audio guardados: ${File(report.savedFilePath).name}"
-
-                    val spokenMsg = if (report.scheduledEvents.isNotEmpty()) {
-                        val ev = report.scheduledEvents.first()
-                        "Reunión finalizada. Registré ${report.agreements.size} acuerdos y agendé automáticamente ${ev.title} para ${ev.dateDescription} en tu agenda."
-                    } else if (report.agreements.isNotEmpty()) {
-                        "Reunión finalizada. Registré ${report.agreements.size} acuerdos en el acta ejecutiva."
-                    } else {
-                        "Reunión finalizada. Acta guardada en el dispositivo."
-                    }
-                    voiceManager.speakDirectly(spokenMsg)
-                }
-            } catch (e: Exception) {
-                Log.e("Minutes", "Error procesando reunión", e)
-                withContext(Dispatchers.Main) {
-                    isAiProcessing = false
-                    meetingSavedMessage = "Error al procesar acta: ${e.message}"
-                }
-            }
+        // Selección de pestaña inicial inteligente
+        selectedTab = when {
+            !actaText.isNullOrBlank() -> 2
+            !literalText.isNullOrBlank() -> 1
+            else -> 0
         }
     }
 
-    fun reprocessMeetingWithAi() {
-        val audio = currentMeetingAudioFile ?: return
-        if (!audio.exists() || audio.length() == 0L || isAiProcessing) return
+    LaunchedEffect(Unit) {
+        // En Actas y Minutas no se graba; apagar modo conversacional para evitar cualquier sonido
+        voiceManager.stopConversationMode()
+        val list = getRecordings()
+        availableRecordings = list
+        if (selectedAudioFile == null && list.isNotEmpty()) {
+            selectedAudioFile = list.first()
+        }
+        loadCompanionDeliverables(selectedAudioFile)
+    }
+
+    LaunchedEffect(selectedAudioFile) {
+        try {
+            audioPlayer?.stop()
+            audioPlayer?.release()
+        } catch (e: Exception) {}
+        audioPlayer = null
+        isPlayingAudio = false
+        audioPositionSec = 0
+        loadCompanionDeliverables(selectedAudioFile)
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            try {
+                audioPlayer?.stop()
+                audioPlayer?.release()
+            } catch (e: Exception) {}
+            audioPlayer = null
+            isPlayingAudio = false
+        }
+    }
+
+    // Progreso del reproductor de audio
+    LaunchedEffect(isPlayingAudio) {
+        while (isPlayingAudio && audioPlayer != null) {
+            audioPositionSec = try { (audioPlayer?.currentPosition ?: 0) / 1000 } catch (e: Exception) { 0 }
+            delay(500)
+        }
+    }
+
+    fun toggleAudioPlayback() {
+        val audio = selectedAudioFile ?: return
+        if (!audio.exists()) return
+
+        try {
+            if (isPlayingAudio && audioPlayer != null) {
+                audioPlayer?.pause()
+                isPlayingAudio = false
+            } else if (audioPlayer != null) {
+                audioPlayer?.start()
+                isPlayingAudio = true
+            } else {
+                audioPlayer = MediaPlayer().apply {
+                    setDataSource(audio.absolutePath)
+                    prepare()
+                    start()
+                    setOnCompletionListener {
+                        isPlayingAudio = false
+                        audioPositionSec = 0
+                    }
+                }
+                isPlayingAudio = true
+            }
+        } catch (e: Exception) {
+            Log.e("Minutes", "Error reproduciendo audio", e)
+            isPlayingAudio = false
+        }
+    }
+
+    // Procesamiento con IA: Generar Entregables 2 y 3
+    fun processWithAi() {
+        val audio = selectedAudioFile ?: return
+        if (!audio.exists() || isAiProcessing) return
+
         isAiProcessing = true
-        meetingSavedMessage = "🔄 Conectando con IA para transcribir audio guardado..."
+        statusMessage = "🔄 Conectando con IA Gemini para analizar grabación..."
 
         scope.launch(Dispatchers.IO) {
             try {
-                val cloudTranscript = voiceManager.transcribeAudioFile(audio, forceCloud = true)
-                val report = voiceManager.finalizeAndProcessMeeting(
+                // 1. Obtener o generar Transcripción Literal (Entregable 2)
+                var lit = literalText
+                if (lit.isNullOrBlank() || lit.length < 10) {
+                    withContext(Dispatchers.Main) {
+                        statusMessage = "🎙️ Paso 1/2: Generando Transcripción Literal palabra por palabra..."
+                    }
+                    lit = voiceManager.transcribeAudioFileLiteral(audio, forceCloud = true)
+                    withContext(Dispatchers.Main) {
+                        literalText = lit
+                    }
+                }
+
+                // 2. Analizar el texto literal y redactar el Acta y Minuta Ejecutiva (Entregable 3)
+                withContext(Dispatchers.Main) {
+                    statusMessage = "📋 Paso 2/2: Rescatando acuerdos, citas y puntos esenciales..."
+                }
+
+                val report = voiceManager.generateExecutiveMinutesFromLiteral(
+                    literalText = lit,
                     audioFile = audio,
-                    durationSeconds = recordingSeconds,
-                    directAiTranscript = cloudTranscript
+                    durationSeconds = audioDurationSec.toLong()
                 )
+
                 withContext(Dispatchers.Main) {
                     isAiProcessing = false
-                    selectedMeetingTab = 0
-                    meetingSavedMessage = "✅ Acta transcrita con IA: ${File(report.savedFilePath).name}"
+                    executiveReport = report
+                    actaText = report.fullActaText
+                    selectedTab = 2 // Mostrar de inmediato el Acta Oficial generada
+                    statusMessage = "✅ Acta y Minuta generada exitosamente"
+
+                    val spoken = if (report.agreements.isNotEmpty()) {
+                        "Acta ejecutiva procesada. Registré ${report.agreements.size} acuerdos en el documento."
+                    } else {
+                        "Acta ejecutiva procesada y guardada en tu dispositivo."
+                    }
+                    voiceManager.speakDirectly(spoken)
                 }
             } catch (e: Exception) {
-                Log.e("Minutes", "Error reprocesando con IA", e)
+                Log.e("Minutes", "Error procesando acta con IA", e)
                 withContext(Dispatchers.Main) {
                     isAiProcessing = false
-                    meetingSavedMessage = "⚠️ Sin internet: ${e.message ?: "Comprueba tu conexión e intenta de nuevo."}"
+                    statusMessage = "⚠️ Error al procesar: ${e.message ?: "Comprueba tu conexión e intenta de nuevo."}"
                 }
             }
         }
@@ -4918,68 +4855,79 @@ private fun MinutesScreen(
         verticalArrangement = Arrangement.SpaceBetween,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Cabecera del Transcriptor
-        Row(
+        // Cabecera: Título y Selector de Sesión
+        Column(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Box(
-                    modifier = Modifier
-                        .size(8.dp)
-                        .background(if (isSessionActive || isRecordingAudio) Color(0xFF00E676) else Color(0xFF616161), CircleShape)
-                )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Box(modifier = Modifier.size(8.dp).background(Color(0xFF00E5FF), CircleShape))
+                    Text(
+                        text = "ACTAS Y MINUTAS",
+                        fontSize = if (isRound) 11.sp else 12.5.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Black,
+                        color = Color(0xFF00E5FF)
+                    )
+                }
                 Text(
-                    text = "ACTAS Y MINUTAS",
-                    fontSize = if (isRound) 11.sp else 12.5.sp,
+                    text = "3 ENTREGABLES",
+                    fontSize = if (isRound) 9.sp else 10.5.sp,
                     fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Black,
-                    color = Color(0xFFE25227)
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF00E676)
                 )
             }
-            if (isRecordingAudio) {
-                val min = recordingSeconds / 60
-                val sec = recordingSeconds % 60
-                Text(
-                    text = String.format(Locale.US, "🔴 %02d:%02d", min, sec),
-                    fontSize = if (isRound) 10.sp else 11.5.sp,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFFFF5252)
-                )
-            } else {
-                Text(
-                    text = "${history.size} TURNOS",
-                    fontSize = if (isRound) 10.sp else 11.5.sp,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF00E5FF)
-                )
+
+            // Selector de grabación actual
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color(0xFF141923))
+                    .border(1.dp, Color(0xFF263345), RoundedCornerShape(6.dp))
+                    .clickable { showAudioPicker = true }
+                    .padding(horizontal = 8.dp, vertical = 5.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = selectedAudioFile?.name ?: "Sin grabaciones en el dispositivo",
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                        color = Color.White,
+                        maxLines = 1
+                    )
+                    Text(
+                        text = "Toca para cambiar de sesión (${availableRecordings.size} disponibles) ▼",
+                        fontSize = 8.5.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = Color(0xFF78909C)
+                    )
+                }
             }
         }
 
-        // Botón Maestro: Iniciar / Detener y Guardar Reunión
+        // Botón Principal de Acción IA: Generar / Procesar Acta
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(if (isRound) 32.dp else 36.dp)
                 .clip(RoundedCornerShape(8.dp))
-                .background(if (isSessionActive || isRecordingAudio) Color(0xFFB71C1C) else Color(0xFFE25227))
-                .clickable {
-                    if (isSessionActive || isRecordingAudio) {
-                        stopAndSaveMeetingSession()
-                    } else {
-                        startMeetingSession()
-                    }
-                },
+                .background(if (isAiProcessing) Color(0xFF1A237E) else Color(0xFF0D47A1))
+                .border(1.2.dp, Color(0xFF2979FF), RoundedCornerShape(8.dp))
+                .clickable(enabled = !isAiProcessing && selectedAudioFile != null) { processWithAi() },
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = if (isSessionActive || isRecordingAudio)
-                    "⏹ FINALIZAR Y GUARDAR (AUDIO + ACTA)"
-                else
-                    "🎙 INICIAR REUNIÓN CONTINUA",
+                text = if (isAiProcessing) "⏳ PROCESANDO CON GEMINI..." else "⚡ PROCESAR Y GENERAR ACTA CON IA",
                 fontSize = if (isRound) 9.5.sp else 11.sp,
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Black,
@@ -4987,113 +4935,617 @@ private fun MinutesScreen(
             )
         }
 
-        // Visualizador de Espectro con Diarización Multi-Orador en Vivo
-        MultiSpeakerDiarizationVisualizer(
-            speakerZone1 = speakerZone1,
-            speakerZone2 = speakerZone2,
-            speakerZone3 = speakerZone3,
-            speakerZone4 = speakerZone4,
-            activeSpeakerIndex = activeSpeakerIndex,
-            speaker1PeakDb = speaker1PeakDb,
-            speaker2PeakDb = speaker2PeakDb,
-            speaker3PeakDb = speaker3PeakDb,
-            speaker4PeakDb = speaker4PeakDb
-        )
+        // Mensaje de estado
+        if (statusMessage != null) {
+            Text(
+                text = statusMessage!!,
+                fontSize = 9.sp,
+                fontFamily = FontFamily.Monospace,
+                color = if (statusMessage!!.startsWith("⚠️")) Color(0xFFFF8A80) else Color(0xFF80D8FF),
+                maxLines = 1
+            )
+        }
 
-        // Acceso Rápido al Reproductor y Procesamiento con IA de Grabaciones Disponibles
-        val targetAudio = currentMeetingAudioFile
-        if (targetAudio != null && targetAudio.exists()) {
-            Row(
+        // Selector de Pestañas: Los 3 Entregables
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            // Pestaña 1: Audio
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
+                    .weight(1f)
+                    .height(if (isRound) 26.dp else 29.dp)
                     .clip(RoundedCornerShape(6.dp))
-                    .background(Color(0xFF13221C))
-                    .border(1.dp, Color(0xFF00E676), RoundedCornerShape(6.dp))
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                    .background(if (selectedTab == 0) Color(0xFF00897B) else Color(0xFF1A222D))
+                    .clickable { selectedTab = 0 },
+                contentAlignment = Alignment.Center
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = meetingSavedMessage ?: "Audio: ${targetAudio.name}",
-                        fontSize = 9.sp,
-                        fontFamily = FontFamily.Monospace,
-                        color = Color(0xFFB9F6CA)
-                    )
-                    if (availableAudios.size > 1) {
-                        Text(
-                            text = "📂 Ver todas las grabaciones (${availableAudios.size})",
-                            fontSize = 8.sp,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF00E5FF),
-                            modifier = Modifier.clickable { showAudioPicker = true }
-                        )
-                    }
-                }
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(Color(0xFF00E676))
-                            .clickable {
-                                try {
-                                    if (isPreviewPlaying && previewPlayer != null) {
-                                        previewPlayer?.stop()
-                                        previewPlayer?.release()
-                                        previewPlayer = null
-                                        isPreviewPlaying = false
-                                    } else {
-                                        previewPlayer?.release()
-                                        previewPlayer = MediaPlayer().apply {
-                                            setDataSource(targetAudio.absolutePath)
-                                            prepare()
-                                            start()
-                                            setOnCompletionListener { isPreviewPlaying = false }
+                Text(
+                    text = "1. 🎵 AUDIO",
+                    fontSize = if (isRound) 8.5.sp else 10.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            }
+            // Pestaña 2: Literal
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(if (isRound) 26.dp else 29.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(if (selectedTab == 1) Color(0xFF1565C0) else Color(0xFF1A222D))
+                    .clickable { selectedTab = 1 },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "2. 📝 LITERAL",
+                    fontSize = if (isRound) 8.5.sp else 10.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            }
+            // Pestaña 3: Acta IA
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(if (isRound) 26.dp else 29.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(if (selectedTab == 2) Color(0xFFE25227) else Color(0xFF1A222D))
+                    .clickable { selectedTab = 2 },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "3. 📋 ACTA IA",
+                    fontSize = if (isRound) 8.5.sp else 10.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            }
+        }
+
+        // Contenedor Central Dinámico según el Entregable Seleccionado
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(vertical = 2.dp)
+                .background(Color(0xFF10131A), RoundedCornerShape(8.dp))
+                .border(1.dp, Color(0xFF222838), RoundedCornerShape(8.dp))
+                .padding(if (isRound) 6.dp else 8.dp)
+        ) {
+            when (selectedTab) {
+                // ==================== ENTREGABLE 1: AUDIO MEJORADO ====================
+                0 -> {
+                    val audio = selectedAudioFile
+                    if (audio != null && audio.exists()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "ENTREGABLE 1: AUDIO DE ESTUDIO",
+                                fontSize = 11.5.sp,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Black,
+                                color = Color(0xFF00E676)
+                            )
+                            Text(
+                                text = "✓ Calidad Broadcast: 48 kHz Mono · 256 kbps AAC",
+                                fontSize = 9.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = Color(0xFFB0BEC5)
+                            )
+                            Text(
+                                text = "✓ Filtrado acústico de sala: Cancelación de eco (AEC) y ganancia automática (AGC) activas.",
+                                fontSize = 8.5.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = Color(0xFF78909C),
+                                textAlign = TextAlign.Center
+                            )
+
+                            // Tarjeta de Reproducción
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color(0xFF16202C))
+                                    .border(1.dp, Color(0xFF263C52), RoundedCornerShape(8.dp))
+                                    .padding(10.dp)
+                            ) {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Text(
+                                        text = audio.name,
+                                        fontSize = 11.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                    val curMin = audioPositionSec / 60
+                                    val curSec = audioPositionSec % 60
+                                    val totalMin = audioDurationSec / 60
+                                    val totalSec = audioDurationSec % 60
+                                    Text(
+                                        text = String.format(Locale.US, "%02d:%02d / %02d:%02d min", curMin, curSec, totalMin, totalSec),
+                                        fontSize = 13.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.Black,
+                                        color = Color(0xFF00E5FF)
+                                    )
+
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(if (isPlayingAudio) Color(0xFF00E5FF) else Color(0xFF00C853))
+                                                .clickable { toggleAudioPlayback() }
+                                                .padding(horizontal = 14.dp, vertical = 8.dp)
+                                        ) {
+                                            Text(
+                                                text = if (isPlayingAudio) "❚❚ PAUSAR" else "▶ REPRODUCIR",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Black,
+                                                color = Color.Black
+                                            )
                                         }
-                                        isPreviewPlaying = true
+
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(Color(0xFF263238))
+                                                .clickable {
+                                                    try {
+                                                        val uri = androidx.core.content.FileProvider.getUriForFile(
+                                                            context,
+                                                            context.packageName + ".provider",
+                                                            audio
+                                                        )
+                                                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                                            type = "audio/*"
+                                                            putExtra(Intent.EXTRA_STREAM, uri)
+                                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                                                        }
+                                                        context.startActivity(Intent.createChooser(shareIntent, "Compartir Audio M4A").apply {
+                                                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                                        })
+                                                    } catch (e: Exception) {
+                                                        Log.e("Minutes", "Error compartiendo audio", e)
+                                                    }
+                                                }
+                                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                                        ) {
+                                            Text(
+                                                text = "📤 COMPARTIR M4A",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White
+                                            )
+                                        }
                                     }
-                                } catch (e: Exception) {
-                                    Log.e("Minutes", "Error reproduciendo preview", e)
                                 }
                             }
-                            .padding(horizontal = 6.dp, vertical = 3.dp)
-                    ) {
-                        Text(
-                            text = if (isPreviewPlaying) "❚❚" else "▶ OÍR",
-                            fontSize = 10.sp,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.Black
-                        )
+                        }
+                    } else {
+                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text(
+                                text = "No hay audio seleccionado.\nGraba un audio en el módulo Grabadora.",
+                                color = Color.Gray,
+                                fontFamily = FontFamily.Monospace,
+                                textAlign = TextAlign.Center
+                            )
+                        }
                     }
+                }
 
-                    // Botón para procesar con IA cuando se conecte a internet
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(if (isAiProcessing) Color(0xFF616161) else Color(0xFF00E5FF))
-                            .clickable {
-                                if (!isAiProcessing) reprocessMeetingWithAi()
+                // ==================== ENTREGABLE 2: TRANSCRIPCIÓN LITERAL ====================
+                1 -> {
+                    if (!literalText.isNullOrBlank()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "ENTREGABLE 2: TRANSCRIPCIÓN LITERAL",
+                                    fontSize = 10.5.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Black,
+                                    color = Color(0xFF00E5FF)
+                                )
+                                Text(
+                                    text = "PALABRA POR PALABRA",
+                                    fontSize = 8.5.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = Color(0xFF00E676)
+                                )
                             }
-                            .padding(horizontal = 6.dp, vertical = 3.dp)
-                    ) {
-                        Text(
-                            text = if (isAiProcessing) "⏳" else "🔄 IA",
-                            fontSize = 10.sp,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.Black
-                        )
+                            Text(
+                                text = literalText!!,
+                                fontSize = if (isRound) 11.sp else 12.5.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = Color.White,
+                                lineHeight = if (isRound) 16.sp else 18.sp
+                            )
+                        }
+                    } else {
+                        Column(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.Center,
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "Aún no se ha generado la transcripción literal de este audio.\n\nToca el botón '⚡ PROCESAR Y GENERAR ACTA CON IA' para transcribir palabra por palabra.",
+                                color = Color(0xFFB0BEC5),
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
+
+                // ==================== ENTREGABLE 3: ACTA Y MINUTA EJECUTIVA ====================
+                2 -> {
+                    val report = executiveReport ?: lastExecutiveReport
+                    if (report != null) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            // Cabecera Acta
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "ENTREGABLE 3: ACTA EJECUTIVA CDPE",
+                                        fontSize = if (isRound) 10.5.sp else 11.5.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.Black,
+                                        color = Color(0xFF00E5FF)
+                                    )
+                                    Text(
+                                        text = "${report.dateFormatted} • Duración: ${report.durationFormatted}",
+                                        fontSize = 8.5.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = Color(0xFF90A4AE)
+                                    )
+                                }
+                            }
+
+                            // 1. Resumen Ejecutivo
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Color(0xFF17202C), RoundedCornerShape(6.dp))
+                                    .border(1.dp, Color(0xFF26384D), RoundedCornerShape(6.dp))
+                                    .padding(8.dp)
+                            ) {
+                                Text(
+                                    text = "📌 1. RESUMEN EJECUTIVO:",
+                                    fontSize = 9.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFFFB74D)
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = report.summary,
+                                    fontSize = if (isRound) 10.5.sp else 12.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = Color.White,
+                                    lineHeight = if (isRound) 15.sp else 17.sp
+                                )
+                            }
+
+                            // 2. Puntos Clave
+                            if (report.keyPoints.isNotEmpty()) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(Color(0xFF131E1E), RoundedCornerShape(6.dp))
+                                        .border(1.dp, Color(0xFF00897B), RoundedCornerShape(6.dp))
+                                        .padding(8.dp)
+                                ) {
+                                    Text(
+                                        text = "🔑 2. PUNTOS ESENCIALES DISCUTIDOS:",
+                                        fontSize = 9.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF80CBC4)
+                                    )
+                                    Spacer(modifier = Modifier.height(3.dp))
+                                    for (point in report.keyPoints) {
+                                        Text(
+                                            text = "• $point",
+                                            fontSize = if (isRound) 10.sp else 11.5.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = Color(0xFFE0F2F1),
+                                            modifier = Modifier.padding(vertical = 1.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            // 3. Acuerdos y Compromisos
+                            if (report.agreements.isNotEmpty()) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(Color(0xFF1B2418), RoundedCornerShape(6.dp))
+                                        .border(1.dp, Color(0xFF2E7D32), RoundedCornerShape(6.dp))
+                                        .padding(8.dp)
+                                ) {
+                                    Text(
+                                        text = "🤝 3. ACUERDOS Y COMPROMISOS (${report.agreements.size}):",
+                                        fontSize = 9.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF81C784)
+                                    )
+                                    Spacer(modifier = Modifier.height(3.dp))
+                                    report.agreements.forEachIndexed { idx, agr ->
+                                        Text(
+                                            text = "${idx + 1}. $agr",
+                                            fontSize = if (isRound) 10.sp else 11.5.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Color(0xFFC8E6C9),
+                                            modifier = Modifier.padding(vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            // 4. Citas Agendadas Automáticamente
+                            if (report.scheduledEvents.isNotEmpty()) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(Color(0xFF2B1D14), RoundedCornerShape(6.dp))
+                                        .border(1.dp, Color(0xFFE65100), RoundedCornerShape(6.dp))
+                                        .padding(8.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "📅 4. AGENDADO EN CALENDARIO:",
+                                            fontSize = 9.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFFFFB74D)
+                                        )
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(4.dp))
+                                                .background(Color(0xFFE65100))
+                                                .clickable { voiceManager.openModuleByVoice("agenda") }
+                                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                        ) {
+                                            Text(
+                                                text = "VER EN AGENDA ➔",
+                                                fontSize = 8.5.sp,
+                                                fontFamily = FontFamily.Monospace,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    for (ev in report.scheduledEvents) {
+                                        Text(
+                                            text = "🗓 ${ev.title}",
+                                            fontSize = if (isRound) 10.sp else 11.5.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFFFFCC80)
+                                        )
+                                        Text(
+                                            text = "   ⏰ ${ev.dateDescription}",
+                                            fontSize = 9.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = Color(0xFFFFE0B2)
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Botón de Narrar Síntesis
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(30.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(Color(0xFF00838F))
+                                    .clickable {
+                                        voiceManager.speakDirectly(report.spokenSummary)
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "🔊 NARRAR SÍNTESIS CON VOZ",
+                                    fontSize = 10.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                            }
+                        }
+                    } else if (!actaText.isNullOrBlank()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = "ENTREGABLE 3: ACTA Y MINUTA EJECUTIVA",
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Black,
+                                color = Color(0xFF00E5FF)
+                            )
+                            Text(
+                                text = actaText!!,
+                                fontSize = if (isRound) 10.5.sp else 12.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = Color.White,
+                                lineHeight = if (isRound) 15.sp else 17.sp
+                            )
+                        }
+                    } else {
+                        Column(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.Center,
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "Acta y minuta aún no analizada por IA para esta grabación.\n\nToca '⚡ PROCESAR Y GENERAR ACTA CON IA' para extraer los puntos esenciales, acuerdos y citas.",
+                                color = Color(0xFFB0BEC5),
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                textAlign = TextAlign.Center
+                            )
+                        }
                     }
                 }
             }
         }
 
-        // Diálogo para Elegir Cuál Reunión Analizar con la IA
+        // Barra Inferior: Acciones Globales del Acta (Copiar, Compartir, Eliminar)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(if (isRound) 30.dp else 34.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF1A237E))
+                    .clickable {
+                        val textToCopy = when (selectedTab) {
+                            1 -> literalText ?: ""
+                            2 -> actaText ?: executiveReport?.fullActaText ?: ""
+                            else -> selectedAudioFile?.name ?: ""
+                        }
+                        if (textToCopy.isNotBlank()) {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            val clip = android.content.ClipData.newPlainText("Documento CDPE", textToCopy)
+                            clipboard.setPrimaryClip(clip)
+                            statusMessage = "📋 Copiado al portapapeles"
+                        }
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(text = "📋 COPIAR", fontSize = if (isRound) 9.5.sp else 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF8C9EFF))
+            }
+
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(if (isRound) 30.dp else 34.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF2E7D32))
+                    .clickable {
+                        val textToShare = when (selectedTab) {
+                            1 -> literalText ?: ""
+                            2 -> actaText ?: executiveReport?.fullActaText ?: ""
+                            else -> "Audio: ${selectedAudioFile?.name}"
+                        }
+                        if (textToShare.isNotBlank()) {
+                            val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, textToShare)
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(Intent.createChooser(sendIntent, "Compartir Entregable").apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            })
+                        }
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(text = "📤 COMPARTIR", fontSize = if (isRound) 9.5.sp else 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            }
+
+            // Eliminar sesión completa
+            Box(
+                modifier = Modifier
+                    .size(if (isRound) 30.dp else 34.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFF3E1717))
+                    .clickable {
+                        try {
+                            audioPlayer?.stop()
+                            audioPlayer?.release()
+                            audioPlayer = null
+                            isPlayingAudio = false
+                        } catch (e: Exception) {}
+
+                        val toDelete = mutableListOf<String>()
+                        selectedAudioFile?.let { audio ->
+                            if (audio.exists()) {
+                                toDelete.add(audio.absolutePath)
+                                audio.delete()
+                            }
+                            val clean = audio.nameWithoutExtension.removePrefix("reunion_").removePrefix("Literal_").removePrefix("Acta_")
+                            val parent = audio.parentFile
+                            val companion1 = File(parent, "Literal_${audio.nameWithoutExtension}.txt")
+                            val companion2 = File(parent, "Literal_$clean.txt")
+                            val companion3 = File(parent, "${audio.nameWithoutExtension}.txt")
+                            val companion4 = File(parent, "Acta_${audio.nameWithoutExtension}.txt")
+                            val companion5 = File(parent, "Acta_$clean.txt")
+                            listOf(companion1, companion2, companion3, companion4, companion5).forEach { f ->
+                                if (f.exists()) {
+                                    toDelete.add(f.absolutePath)
+                                    f.delete()
+                                }
+                            }
+                        }
+
+                        if (toDelete.isNotEmpty()) {
+                            MediaScannerConnection.scanFile(context, toDelete.toTypedArray(), null, null)
+                        }
+
+                        availableRecordings = getRecordings()
+                        selectedAudioFile = availableRecordings.firstOrNull()
+                        loadCompanionDeliverables(selectedAudioFile)
+                        statusMessage = "🗑️ Sesión y entregables eliminados"
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(text = "🗑", fontSize = if (isRound) 13.sp else 15.sp, color = Color(0xFFFF5252))
+            }
+        }
+
+        // Modal para Seleccionar Grabación
         if (showAudioPicker) {
             Dialog(onDismissRequest = { showAudioPicker = false }) {
                 Box(
@@ -5106,14 +5558,14 @@ private fun MinutesScreen(
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
-                            text = "SELECCIONAR REUNIÓN PARA EL ACTA",
+                            text = "SELECCIONAR GRABACIÓN",
                             fontSize = 12.sp,
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Black,
                             color = Color(0xFF00E5FF)
                         )
                         Text(
-                            text = "Toca la grabación que deseas analizar y transcribir con IA:",
+                            text = "Elige la sesión para ver sus 3 entregables y procesar con IA:",
                             fontSize = 10.sp,
                             color = Color(0xFFB0BEC5)
                         )
@@ -5124,24 +5576,19 @@ private fun MinutesScreen(
                                 .verticalScroll(rememberScrollState()),
                             verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            availableAudios.forEachIndexed { idx, audioFile ->
-                                val isSelected = currentMeetingAudioFile?.absolutePath == audioFile.absolutePath
+                            availableRecordings.forEach { audioFile ->
+                                val isSelected = selectedAudioFile?.absolutePath == audioFile.absolutePath
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .clip(RoundedCornerShape(6.dp))
                                         .background(if (isSelected) Color(0xFF1A3344) else Color(0xFF181C26))
                                         .border(1.dp, if (isSelected) Color(0xFF00E5FF) else Color(0xFF262C3D), RoundedCornerShape(6.dp))
-                                        .clickable {
-                                            audioSelectIndex = idx
-                                            currentMeetingAudioFile = audioFile
-                                            meetingSavedMessage = "Audio seleccionado: ${audioFile.name}"
-                                            previewPlayer?.release()
-                                            previewPlayer = null
-                                            isPreviewPlaying = false
-                                            showAudioPicker = false
-                                        }
-                                        .padding(8.dp),
+                                    .clickable {
+                                        selectedAudioFile = audioFile
+                                        showAudioPicker = false
+                                    }
+                                    .padding(8.dp),
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
@@ -5182,472 +5629,9 @@ private fun MinutesScreen(
                 }
             }
         }
-
-        // Pestañas cuando existe un Acta Ejecutiva procesada
-        if (lastExecutiveReport != null) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 2.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(if (isRound) 28.dp else 32.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(if (selectedMeetingTab == 0) Color(0xFFE25227) else Color(0xFF1E2430))
-                        .clickable { selectedMeetingTab = 0 },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "📋 ACTA Y ACUERDOS",
-                        fontSize = if (isRound) 9.sp else 10.5.sp,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                }
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(if (isRound) 28.dp else 32.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(if (selectedMeetingTab == 1) Color(0xFF00B0FF) else Color(0xFF1E2430))
-                        .clickable { selectedMeetingTab = 1 },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "🗣 DIÁLOGO (${history.size})",
-                        fontSize = if (isRound) 9.sp else 10.5.sp,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                }
-            }
-        }
-
-        // Contenedor Principal: Vista de Acta Ejecutiva O Historial de Diálogo
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .padding(vertical = 4.dp)
-                .background(Color(0xFF10131A), RoundedCornerShape(8.dp))
-                .border(1.dp, Color(0xFF222838), RoundedCornerShape(8.dp))
-                .padding(if (isRound) 6.dp else 8.dp)
-        ) {
-            val report = lastExecutiveReport
-            if (report != null && selectedMeetingTab == 0) {
-                // VISTA DE ACTA EJECUTIVA Y ACUERDOS
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // Cabecera Acta
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = report.title,
-                                fontSize = if (isRound) 11.sp else 12.5.sp,
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Black,
-                                color = Color(0xFF00E5FF)
-                            )
-                            Text(
-                                text = "${report.dateFormatted} • Duración: ${report.durationFormatted}",
-                                fontSize = 9.sp,
-                                fontFamily = FontFamily.Monospace,
-                                color = Color(0xFF90A4AE)
-                            )
-                        }
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(Color(0xFF263238))
-                                .clickable { voiceManager.clearLastMeetingReport() }
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Text(text = "✕ CERRAR", fontSize = 8.5.sp, fontFamily = FontFamily.Monospace, color = Color(0xFFCFD8DC))
-                        }
-                    }
-
-                    // Resumen Ejecutivo
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color(0xFF17202C), RoundedCornerShape(6.dp))
-                            .border(1.dp, Color(0xFF26384D), RoundedCornerShape(6.dp))
-                            .padding(8.dp)
-                    ) {
-                        Text(
-                            text = "SÍNTESIS EJECUTIVA:",
-                            fontSize = 9.sp,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFFFFB74D)
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = report.summary,
-                            fontSize = if (isRound) 10.5.sp else 12.sp,
-                            fontFamily = FontFamily.Monospace,
-                            color = Color.White,
-                            lineHeight = if (isRound) 15.sp else 17.sp
-                        )
-                    }
-
-                    // Puntos Clave
-                    if (report.keyPoints.isNotEmpty()) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(Color(0xFF131E1E), RoundedCornerShape(6.dp))
-                                .border(1.dp, Color(0xFF00897B), RoundedCornerShape(6.dp))
-                            .padding(8.dp)
-                        ) {
-                            Text(
-                                text = "📌 PUNTOS CLAVE TRATADOS:",
-                                fontSize = 9.sp,
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF80CBC4)
-                            )
-                            Spacer(modifier = Modifier.height(3.dp))
-                            for (point in report.keyPoints) {
-                                Text(
-                                    text = "• $point",
-                                    fontSize = if (isRound) 10.sp else 11.5.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    color = Color(0xFFE0F2F1),
-                                    modifier = Modifier.padding(vertical = 1.dp)
-                                )
-                            }
-                        }
-                    }
-
-                    // Acuerdos y Compromisos
-                    if (report.agreements.isNotEmpty()) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(Color(0xFF1B2418), RoundedCornerShape(6.dp))
-                                .border(1.dp, Color(0xFF2E7D32), RoundedCornerShape(6.dp))
-                                .padding(8.dp)
-                        ) {
-                            Text(
-                                text = "🤝 ACUERDOS Y COMPROMISOS (${report.agreements.size}):",
-                                fontSize = 9.sp,
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF81C784)
-                            )
-                            Spacer(modifier = Modifier.height(3.dp))
-                            report.agreements.forEachIndexed { idx, agr ->
-                                Text(
-                                    text = "${idx + 1}. $agr",
-                                    fontSize = if (isRound) 10.sp else 11.5.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = Color(0xFFC8E6C9),
-                                    modifier = Modifier.padding(vertical = 2.dp)
-                                )
-                            }
-                        }
-                    }
-
-                    // Citas Agendadas Automáticamente
-                    if (report.scheduledEvents.isNotEmpty()) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(Color(0xFF2B1D14), RoundedCornerShape(6.dp))
-                                .border(1.dp, Color(0xFFE65100), RoundedCornerShape(6.dp))
-                                .padding(8.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "📅 AGENDADO AUTOMÁTICAMENTE:",
-                                    fontSize = 9.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFFFFB74D)
-                                )
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(4.dp))
-                                        .background(Color(0xFFE65100))
-                                        .clickable { voiceManager.openModuleByVoice("agenda") }
-                                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                                ) {
-                                    Text(
-                                        text = "VER EN AGENDA ➔",
-                                        fontSize = 8.5.sp,
-                                        fontFamily = FontFamily.Monospace,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.White
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(4.dp))
-                            for (ev in report.scheduledEvents) {
-                                Text(
-                                    text = "🗓 ${ev.title}",
-                                    fontSize = if (isRound) 10.sp else 11.5.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFFFFCC80)
-                                )
-                                Text(
-                                    text = "   ⏰ ${ev.dateDescription}",
-                                    fontSize = 9.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    color = Color(0xFFFFE0B2)
-                                )
-                            }
-                        }
-                    }
-
-                    // Botones de acción del Acta
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(32.dp)
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(Color(0xFF00838F))
-                                .clickable {
-                                    voiceManager.speakDirectly(report.spokenSummary)
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "🔊 NARRAR SÍNTESIS",
-                                fontSize = 9.5.sp,
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
-                        }
-
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(32.dp)
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(Color(0xFF2E7D32))
-                            .clickable {
-                                val sendIntent = Intent(Intent.ACTION_SEND).apply {
-                                    type = "text/plain"
-                                    putExtra(Intent.EXTRA_TEXT, report.fullActaText)
-                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                }
-                                context.startActivity(Intent.createChooser(sendIntent, "Compartir Acta Ejecutiva").apply {
-                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                })
-                            },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "📤 COMPARTIR ACTA",
-                                fontSize = 9.5.sp,
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
-                            )
-                        }
-                    }
-                }
-            } else if (history.isEmpty()) {
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = if (isSessionActive || isRecordingAudio)
-                            "Reunión CDPE activa. Grabando audio ambiente y transcribiendo en vivo..."
-                        else
-                            "Registro en tiempo real de intervenciones en reuniones del CDPE.\nToca 'INICIAR REUNIÓN' para grabar el audio y transcribir el acta.",
-                        fontSize = if (isRound) 11.5.sp else 12.5.sp,
-                        color = Color(0xFFB0BEC5),
-                        textAlign = TextAlign.Center,
-                        lineHeight = if (isRound) 16.sp else 18.sp
-                    )
-                }
-            } else {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    for (turn in history) {
-                        val isUser = turn.role == "user"
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(
-                                    if (isUser) Color(0xFF192234) else Color(0xFF251A18),
-                                    RoundedCornerShape(8.dp)
-                                )
-                                .padding(if (isRound) 6.dp else 8.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    text = if (isUser) "🗣 HABLANTE / JOEL" else "🤖 ASISTENTE JOWELL",
-                                    fontSize = if (isRound) 10.sp else 11.5.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    fontFamily = FontFamily.Monospace,
-                                    color = if (isUser) Color(0xFF00E5FF) else Color(0xFFFF7043)
-                                )
-                                if (turn.timestamp.isNotBlank()) {
-                                    Text(
-                                        text = turn.timestamp,
-                                        fontSize = if (isRound) 9.sp else 10.5.sp,
-                                        fontFamily = FontFamily.Monospace,
-                                        color = Color(0xFF78909C)
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = turn.text,
-                                fontSize = if (isRound) 12.sp else 13.5.sp,
-                                fontWeight = FontWeight.Medium,
-                                fontFamily = FontFamily.Monospace,
-                                color = Color.White,
-                                lineHeight = if (isRound) 16.sp else 18.sp
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // Acciones: Copiar todo, Compartir, Limpiar
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(if (isRound) 32.dp else 36.dp)
-                    .clip(RoundedCornerShape(if (isRound) 16.dp else 8.dp))
-                    .background(Color(0xFF1A237E))
-                    .clickable {
-                        val textToCopy = if (lastExecutiveReport != null) {
-                            if (selectedMeetingTab == 0) lastExecutiveReport?.fullActaText ?: ""
-                            else lastExecutiveReport?.fullTranscription ?: ""
-                        } else {
-                            history.joinToString("\n\n") { "${if (it.role == "user") "JOEL" else "CLIENTE"}: ${it.text}" }
-                        }
-                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                        val clip = android.content.ClipData.newPlainText("Transcripción CDPE", textToCopy)
-                        clipboard.setPrimaryClip(clip)
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                Text(text = "📋 COPIAR", fontSize = if (isRound) 10.sp else 11.5.sp, fontWeight = FontWeight.Bold, color = Color(0xFF8C9EFF))
-            }
-
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(if (isRound) 32.dp else 36.dp)
-                    .clip(RoundedCornerShape(if (isRound) 16.dp else 8.dp))
-                    .background(Color(0xFF263238))
-                    .clickable {
-                        val textToShare = if (lastExecutiveReport != null) {
-                            if (selectedMeetingTab == 0) lastExecutiveReport?.fullActaText ?: ""
-                            else lastExecutiveReport?.fullTranscription ?: ""
-                        } else {
-                            "--- TRANSCRIPCIÓN CDPE ---\n\n" + history.joinToString("\n\n") { "${if (it.role == "user") "JOEL" else "CLIENTE"}: ${it.text}" }
-                        }
-                        val sendIntent = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_TEXT, textToShare)
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
-                        context.startActivity(Intent.createChooser(sendIntent, "Compartir").apply {
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        })
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                Text(text = "📤 COMPARTIR", fontSize = if (isRound) 10.sp else 11.5.sp, fontWeight = FontWeight.Bold, color = Color(0xFFECEFF1))
-            }
-
-            Box(
-                modifier = Modifier
-                    .size(if (isRound) 32.dp else 36.dp)
-                    .clip(RoundedCornerShape(if (isRound) 16.dp else 8.dp))
-                    .background(Color(0xFF3E1717))
-                    .clickable {
-                        try {
-                            previewPlayer?.stop()
-                            previewPlayer?.release()
-                            previewPlayer = null
-                            isPreviewPlaying = false
-                        } catch (e: Exception) {}
-
-                        // Eliminar físicamente los archivos del almacenamiento del teléfono
-                        val deletedFiles = mutableListOf<String>()
-                        currentMeetingAudioFile?.let {
-                            if (it.exists()) {
-                                deletedFiles.add(it.absolutePath)
-                                it.delete()
-                            }
-                        }
-                        currentMeetingTxtFile?.let {
-                            if (it.exists()) {
-                                deletedFiles.add(it.absolutePath)
-                                it.delete()
-                            }
-                        }
-                        lastExecutiveReport?.savedFilePath?.let { path ->
-                            val f = File(path)
-                            if (f.exists()) {
-                                deletedFiles.add(f.absolutePath)
-                                f.delete()
-                            }
-                        }
-                        if (deletedFiles.isNotEmpty()) {
-                            MediaScannerConnection.scanFile(context, deletedFiles.toTypedArray(), null, null)
-                        }
-
-                        currentMeetingAudioFile = null
-                        currentMeetingTxtFile = null
-                        voiceManager.clearConversationHistory()
-                        voiceManager.clearLastMeetingReport()
-                        meetingSavedMessage = "🗑️ Archivos eliminados del dispositivo"
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                Text(text = "🗑", fontSize = if (isRound) 13.sp else 15.sp, color = Color(0xFFFF5252))
-            }
-        }
     }
 }
+
 
 // ==================== MODO 6: AGENDA Y CITAS REALES CDPE ====================
 @Composable
