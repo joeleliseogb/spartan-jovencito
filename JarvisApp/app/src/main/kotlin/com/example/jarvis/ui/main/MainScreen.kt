@@ -2313,12 +2313,16 @@ private fun RecorderScreen(voiceManager: JarvisVoiceManager, isRound: Boolean = 
 
     // Almacenamiento primario en carpeta pública (Grabaciones/JOWELL) y respaldo en almacenamiento de app
     val publicDir = remember {
-        val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_RECORDINGS), "JOWELL")
+        val dir = try {
+            File(Environment.getExternalStoragePublicDirectory("Recordings"), "JOWELL")
+        } catch (e: Throwable) {
+            context.getExternalFilesDir("Recordings") ?: File(context.filesDir, "recordings")
+        }
         try { dir.mkdirs() } catch (e: Exception) {}
         dir
     }
     val appDir = remember {
-        val dir = context.getExternalFilesDir(Environment.DIRECTORY_RECORDINGS) ?: File(context.filesDir, "recordings")
+        val dir = context.getExternalFilesDir("Recordings") ?: File(context.filesDir, "recordings")
         try { dir.mkdirs() } catch (e: Exception) {}
         dir
     }
@@ -2980,7 +2984,11 @@ private fun scanAllDeviceAudio(context: Context): List<PlayableAudioItem> {
     val items = mutableListOf<PlayableAudioItem>()
     // 1. Minutas de reunión en carpeta pública
     try {
-        val pubDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_RECORDINGS), "JOWELL")
+        val pubDir = try {
+            File(Environment.getExternalStoragePublicDirectory("Recordings"), "JOWELL")
+        } catch (e: Throwable) {
+            File(context.filesDir, "JOWELL")
+        }
         val reunionDir = File(pubDir, "Reuniones")
         reunionDir.listFiles()?.filter { it.extension.lowercase() in listOf("m4a", "mp3", "wav", "aac") }?.forEach { f ->
             items.add(
@@ -3018,7 +3026,7 @@ private fun scanAllDeviceAudio(context: Context): List<PlayableAudioItem> {
 
     // 3. Respaldo interno de la aplicación
     try {
-        val appDir = context.getExternalFilesDir(Environment.DIRECTORY_RECORDINGS)
+        val appDir = context.getExternalFilesDir("Recordings")
         appDir?.listFiles()?.filter { it.extension.lowercase() in listOf("m4a", "mp3", "wav", "aac") }?.forEach { f ->
             if (items.none { it.title == f.name }) {
                 items.add(
@@ -4588,9 +4596,10 @@ private fun MinutesScreen(
 
             val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
             val publicMeetingsDir = try {
-                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_RECORDINGS), "JOWELL/Reuniones").also { it.mkdirs() }
-            } catch (e: Exception) {
-                context.getExternalFilesDir(Environment.DIRECTORY_RECORDINGS) ?: context.filesDir
+                File(Environment.getExternalStoragePublicDirectory("Recordings"), "JOWELL/Reuniones").also { it.mkdirs() }
+            } catch (e: Throwable) {
+                val appBase = context.getExternalFilesDir("Recordings") ?: context.filesDir
+                File(appBase, "JOWELL/Reuniones").also { it.mkdirs() }
             }
             val audioFile = File(publicMeetingsDir, "Reunion_$timeStamp.m4a")
             val txtFile = File(publicMeetingsDir, "Reunion_$timeStamp.txt")

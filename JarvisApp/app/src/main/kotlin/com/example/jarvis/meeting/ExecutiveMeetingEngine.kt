@@ -80,8 +80,13 @@ class ExecutiveMeetingEngine(
 ) {
 
     private val publicMeetingsDir by lazy {
-        File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_RECORDINGS), "JOWELL/Reuniones").apply {
-            try { mkdirs() } catch (e: Exception) {}
+        val baseDir = try {
+            Environment.getExternalStoragePublicDirectory("Recordings")
+        } catch (e: Throwable) {
+            context.getExternalFilesDir("Recordings") ?: context.filesDir
+        }
+        File(baseDir, "JOWELL/Reuniones").apply {
+            try { mkdirs() } catch (e: Throwable) {}
         }
     }
 

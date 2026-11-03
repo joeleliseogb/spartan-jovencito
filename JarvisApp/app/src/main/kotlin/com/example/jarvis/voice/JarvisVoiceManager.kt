@@ -1822,10 +1822,10 @@ class JarvisVoiceManager(private val context: Context) : TextToSpeech.OnInitList
                 File(file.parentFile, "Acta_${file.nameWithoutExtension}.txt"),
                 File(file.parentFile, "Reunion_${file.nameWithoutExtension.removePrefix("reunion_")}.txt"),
                 File(file.parentFile, "Acta_${file.nameWithoutExtension.removePrefix("reunion_")}.txt"),
-                File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_RECORDINGS), "JOWELL/${file.nameWithoutExtension}.txt"),
-                File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_RECORDINGS), "JOWELL/Reuniones/${file.nameWithoutExtension}.txt"),
-                File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_RECORDINGS), "JOWELL/Reuniones/Reunion_${file.nameWithoutExtension.removePrefix("reunion_")}.txt"),
-                File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_RECORDINGS), "JOWELL/Reuniones/Acta_${file.nameWithoutExtension.removePrefix("reunion_")}.txt")
+                File(android.os.Environment.getExternalStoragePublicDirectory("Recordings"), "JOWELL/${file.nameWithoutExtension}.txt"),
+                File(android.os.Environment.getExternalStoragePublicDirectory("Recordings"), "JOWELL/Reuniones/${file.nameWithoutExtension}.txt"),
+                File(android.os.Environment.getExternalStoragePublicDirectory("Recordings"), "JOWELL/Reuniones/Reunion_${file.nameWithoutExtension.removePrefix("reunion_")}.txt"),
+                File(android.os.Environment.getExternalStoragePublicDirectory("Recordings"), "JOWELL/Reuniones/Acta_${file.nameWithoutExtension.removePrefix("reunion_")}.txt")
             )
             val existingLocalText = companionTxtFiles.firstOrNull { it.exists() && it.length() > 5 }?.readText()?.trim()
 
