@@ -496,22 +496,6 @@ private fun CircularWatchLayout(
             }
         }
 
-        // ==================== DOCK SUPERIOR DE MÓDULOS (UN SOLO TOQUE PARA CUALQUIER MÓDULO) ====================
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .fillMaxWidth()
-                .padding(top = 6.dp, start = 20.dp, end = 20.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            ModuleNavigationDock(
-                availableModes = availableModes,
-                currentModeIndex = currentModeIndex,
-                onModeChange = onModeChange,
-                isCompact = true
-            )
-        }
-
         // ==================== BARRA INFERIOR DE ESTADO Y MARCA JOWELL ====================
         Row(
             modifier = Modifier
@@ -562,7 +546,7 @@ private fun CircularWatchLayout(
     }
 }
 
-// ==================== BOTÓN PRINCIPAL INDUSTRIAL MECÁNICO (CON LED BLANCO PURO) ====================
+// ==================== BOTÓN PRINCIPAL INDUSTRIAL MECÁNICO (ÚNICAMENTE PUNTITO LED BLANCO) ====================
 @Composable
 private fun IndustrialMechanicalButton(
     isSessionActive: Boolean,
@@ -599,51 +583,37 @@ private fun IndustrialMechanicalButton(
             )
             .clickable(onClick = onClick)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(vertical = (size * 0.09f).dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween
+        // Únicamente el puntito LED blanco puro centrado (sin flechitas ni marcas extra)
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.size((size * 0.40f).dp)
         ) {
-            // Indicador LED Blanco Puro
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier.size((size * 0.22f).dp)
-            ) {
-                if (isSessionActive) {
-                    Box(
-                        modifier = Modifier
-                            .size((size * 0.26f).dp)
-                            .clip(CircleShape)
-                            .background(Color.White.copy(alpha = 0.5f * whiteLedGlow))
-                    )
-                    Box(
-                        modifier = Modifier
-                            .size((size * 0.13f).dp)
-                            .clip(CircleShape)
-                            .background(Color.White)
-                            .border(0.6.dp, Color(0xFFEEEEEE), CircleShape)
-                    )
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .size((size * 0.12f).dp)
-                            .clip(CircleShape)
-                            .background(Color(0x35FFFFFF))
-                            .border(0.6.dp, Color(0x40000000), CircleShape)
-                    )
-                }
+            if (isSessionActive) {
+                // Halo difuso blanco puro brillante (ON)
+                Box(
+                    modifier = Modifier
+                        .size((size * 0.40f).dp)
+                        .clip(CircleShape)
+                        .background(Color.White.copy(alpha = 0.55f * whiteLedGlow))
+                )
+                // Lente central LED blanca de alto contraste
+                Box(
+                    modifier = Modifier
+                        .size((size * 0.22f).dp)
+                        .clip(CircleShape)
+                        .background(Color.White)
+                        .border(0.8.dp, Color(0xFFEEEEEE), CircleShape)
+                )
+            } else {
+                // LED apagado: diodo físico blanco ahumado en reposo (OFF)
+                Box(
+                    modifier = Modifier
+                        .size((size * 0.20f).dp)
+                        .clip(CircleShape)
+                        .background(Color(0x35FFFFFF))
+                        .border(0.8.dp, Color(0x40000000), CircleShape)
+                )
             }
-
-            // Checkmark ✔ grabado
-            Text(
-                text = "✔",
-                fontSize = if (isSessionActive) (size * 0.31f).sp else (size * 0.35f).sp,
-                fontWeight = FontWeight.Black,
-                fontFamily = FontFamily.Monospace,
-                color = if (isSessionActive) Color.White else Color(0xFF261208)
-            )
         }
     }
 }
@@ -696,23 +666,13 @@ private fun RectangularIndustrialLayout(
                         .border(1.5.dp, Color(0xFF1E1E1E), RoundedCornerShape(16.dp))
                         .padding(6.dp)
                 ) {
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        // DOCK DE ACCESO DIRECTO A MÓDULOS (UN TOQUE)
-                        ModuleNavigationDock(
-                            availableModes = availableModes,
-                            currentModeIndex = currentModeIndex,
-                            onModeChange = onModeChange,
-                            isCompact = false,
-                            modifier = Modifier.padding(bottom = 6.dp)
-                        )
-
-                        // CONTENIDO DEL MÓDULO ACTIVO
-                        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                            AnimatedContent(
-                                targetState = currentMode,
-                                transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(200)) },
-                                label = "modeSwap"
-                            ) { mode ->
+                    // CONTENIDO DEL MÓDULO ACTIVO (PANTALLA LIMPIA SIN BOTONES ARRIBA)
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        AnimatedContent(
+                            targetState = currentMode,
+                            transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(200)) },
+                            label = "modeSwap"
+                        ) { mode ->
                                 when (mode) {
                                     JarvisMode.ROBOT -> RobotLiveScreen(
                                         state = state,
@@ -735,7 +695,6 @@ private fun RectangularIndustrialLayout(
                             }
                         }
                     }
-                }
 
                 // BARRA INFERIOR DE MANDOS INDUSTRIALES RETRO (ERGONÓMICA PARA EL PULGAR)
                 Box(
@@ -868,21 +827,12 @@ private fun RectangularIndustrialLayout(
                         .border(1.5.dp, Color(0xFF1E1E1E), RoundedCornerShape(18.dp))
                         .padding(8.dp)
                 ) {
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        ModuleNavigationDock(
-                            availableModes = availableModes,
-                            currentModeIndex = currentModeIndex,
-                            onModeChange = onModeChange,
-                            isCompact = false,
-                            modifier = Modifier.padding(bottom = 6.dp)
-                        )
-
-                        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                            AnimatedContent(
-                                targetState = currentMode,
-                                transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(200)) },
-                                label = "modeSwap"
-                            ) { mode ->
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        AnimatedContent(
+                            targetState = currentMode,
+                            transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(200)) },
+                            label = "modeSwap"
+                        ) { mode ->
                                 when (mode) {
                                     JarvisMode.ROBOT -> RobotLiveScreen(
                                         state = state,
@@ -905,7 +855,6 @@ private fun RectangularIndustrialLayout(
                             }
                         }
                     }
-                }
 
                 // MANDOS LATERALES (TABLETS / MODO HORIZONTAL)
                 Column(
