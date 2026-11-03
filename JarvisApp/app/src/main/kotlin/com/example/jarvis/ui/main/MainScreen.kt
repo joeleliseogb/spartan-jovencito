@@ -50,9 +50,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
@@ -168,8 +171,9 @@ fun MainScreen(
     // Lista dinámica de modos activos según módulos instalados (El Asistente CDPE es NATIVO permanente)
     val availableModes = remember(installedModules) {
         val list = mutableListOf<JarvisMode>()
-        list.add(JarvisMode.ROBOT)   // PANTALLA 1: ASISTENTE EN VIVO (EXCLUSIVO ASISTENTE)
-        list.add(JarvisMode.STANDBY) // PANTALLA 2: RELOJ, CLIMA Y TELEMETRÍA COMPLETA
+        list.add(JarvisMode.ROBOT)       // PANTALLA 1: ASISTENTE EN VIVO (EXCLUSIVO ASISTENTE)
+        list.add(JarvisMode.WATCHFACE)   // PANTALLA 2: ESFERA REALISTA NÓRDICA (PROLIJO EN ESPAÑOL)
+        list.add(JarvisMode.STANDBY)     // PANTALLA 3: BRÚJULA, CLIMA Y TELEMETRÍA COMPLETA
         if (installedModules.any { it.id == ModuleId.RECORDER && it.isInstalled && it.isEnabled }) {
             list.add(JarvisMode.RECORDER)
         }
@@ -335,7 +339,8 @@ fun MainScreen(
 // ==================== UTILIDADES DE NAVEGACIÓN Y ETIQUETAS DE MÓDULOS ====================
 private fun getModuleIcon(mode: JarvisMode): String = when (mode) {
     JarvisMode.ROBOT -> "🎙️"
-    JarvisMode.STANDBY -> "⏱️"
+    JarvisMode.WATCHFACE -> "⌚"
+    JarvisMode.STANDBY -> "🧭"
     JarvisMode.MINUTES -> "📑"
     JarvisMode.RECORDER -> "🔴"
     JarvisMode.AUDIO_PLAYER -> "🎵"
@@ -346,7 +351,8 @@ private fun getModuleIcon(mode: JarvisMode): String = when (mode) {
 
 private fun getModuleShortLabel(mode: JarvisMode): String = when (mode) {
     JarvisMode.ROBOT -> "Asistente"
-    JarvisMode.STANDBY -> "Reloj"
+    JarvisMode.WATCHFACE -> "Esfera"
+    JarvisMode.STANDBY -> "Brújula"
     JarvisMode.MINUTES -> "Minutas"
     JarvisMode.RECORDER -> "Grabar"
     JarvisMode.AUDIO_PLAYER -> "Música"
@@ -485,6 +491,7 @@ private fun CircularWatchLayout(
                         isRound = true,
                         onToggleVoice = { voiceManager.toggleConversationMode() }
                     )
+                    JarvisMode.WATCHFACE -> RealisticWatchFaceScreen(telemetry, isRound = true, onOpenSettings = onOpenSettings)
                     JarvisMode.RECORDER -> RecorderScreen(voiceManager, isRound = true)
                     JarvisMode.AUDIO_PLAYER -> AudioPlayerScreen(isRound = true)
                     JarvisMode.VIDEO_PLAYER -> VideoPlayerScreen(isRound = true)
@@ -684,6 +691,7 @@ private fun RectangularIndustrialLayout(
                                         onOpenSettings = onOpenSettings,
                                         isRound = false
                                     )
+                                    JarvisMode.WATCHFACE -> RealisticWatchFaceScreen(telemetry, isRound = false, onOpenSettings = onOpenSettings)
                                     JarvisMode.RECORDER -> RecorderScreen(voiceManager, isRound = false)
                                     JarvisMode.AUDIO_PLAYER -> AudioPlayerScreen(isRound = false)
                                     JarvisMode.VIDEO_PLAYER -> VideoPlayerScreen(isRound = false)
@@ -844,6 +852,7 @@ private fun RectangularIndustrialLayout(
                                         onOpenSettings = onOpenSettings,
                                         isRound = false
                                     )
+                                    JarvisMode.WATCHFACE -> RealisticWatchFaceScreen(telemetry, isRound = false, onOpenSettings = onOpenSettings)
                                     JarvisMode.RECORDER -> RecorderScreen(voiceManager, isRound = false)
                                     JarvisMode.AUDIO_PLAYER -> AudioPlayerScreen(isRound = false)
                                     JarvisMode.VIDEO_PLAYER -> VideoPlayerScreen(isRound = false)
@@ -5001,6 +5010,209 @@ private fun TacticalCompassDial(
             // Pivote central de latón / rodamiento
             drawCircle(color = Color(0xFF14181E), radius = 4.5.dp.toPx(), center = center)
             drawCircle(color = Color(0xFFFFD54F), radius = 2.dp.toPx(), center = center)
+        }
+    }
+}
+
+// ==================== PANTALLA: ESFERA DE RELOJ REALISTA NÓRDICA (EN ESPAÑOL) ====================
+@Composable
+private fun RealisticWatchFaceScreen(
+    telemetry: com.example.jarvis.sensors.TelemetrySnapshot,
+    isRound: Boolean = false,
+    onOpenSettings: () -> Unit = {}
+) {
+    var currentTime by remember { mutableStateOf(Date()) }
+    var isOledDark by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            currentTime = Date()
+            delay(1000)
+        }
+    }
+
+    val hourStr = remember(currentTime) {
+        val h = SimpleDateFormat("h", Locale.getDefault()).format(currentTime)
+        if (h == "0") "12" else h
+    }
+    val minStr = remember(currentTime) {
+        SimpleDateFormat("mm", Locale.getDefault()).format(currentTime)
+    }
+
+    // Fecha en español idéntica al diseño de la foto: "VIE 8", "LUN 2"
+    val dateStr = remember(currentTime) {
+        val raw = SimpleDateFormat("EEE d", Locale("es", "ES")).format(currentTime)
+        raw.uppercase(Locale("es", "ES")).replace(".", "")
+    }
+
+    // Paleta de color día (cerámica nórdica de la foto) vs noche (OLED táctico)
+    val dialBg = if (isOledDark) Color(0xFF040609) else Color(0xFFF6F7FA)
+    val textColor = if (isOledDark) Color(0xFFF0F4F8) else Color(0xFF2B303A)
+    val dividerColor = if (isOledDark) Color(0xFF4A5568) else Color(0xFF9EA6B2)
+    val casingColor = Color(0xFFEE602C) // Naranja mate idéntico al bisel del reloj de la foto
+    val crownColor = Color(0xFFE25227)
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .clickable { isOledDark = !isOledDark },
+        contentAlignment = Alignment.Center
+    ) {
+        // Envoltura con bisel cilíndrico naranja mate (idéntico a la foto)
+        Box(
+            modifier = Modifier
+                .fillMaxSize(if (isRound) 1f else 0.94f)
+                .aspectRatio(1f)
+                .clip(CircleShape)
+                .background(casingColor)
+                .padding(if (isRound) 4.dp else 8.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            // Corona exterior naranja en el lateral derecho (a las 3:00)
+            if (!isRound) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .offset(x = 6.dp)
+                        .size(width = 8.dp, height = 20.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(crownColor)
+                        .border(0.8.dp, Color(0xFFB83B17), RoundedCornerShape(3.dp))
+                )
+            }
+
+            // Esfera de Cristal Cerámica con bisel de cristal mineral curvo
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(CircleShape)
+                    .background(dialBg)
+                    .border(1.2.dp, if (isOledDark) Color(0xFF222834) else Color(0xFFE2E5EB), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                // Sombra de curvatura de cristal mineral en el perímetro exterior
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val r = size.minDimension / 2f
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            0.76f to Color.Transparent,
+                            0.93f to if (isOledDark) Color(0x33000000) else Color(0x12000000),
+                            1.0f to if (isOledDark) Color(0x66000000) else Color(0x28000000),
+                            center = center,
+                            radius = r
+                        ),
+                        radius = r,
+                        center = center
+                    )
+                }
+
+                // Contenido Tipográfico Minimalista (Exacto a la foto)
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 20.dp)
+                ) {
+                    // Fila de la Hora (Hora gigante + Minutos elevados a la derecha)
+                    Row(
+                        verticalAlignment = Alignment.Top,
+                        horizontalArrangement = Arrangement.Center,
+                        modifier = Modifier.offset(y = (-6).dp)
+                    ) {
+                        Text(
+                            text = hourStr,
+                            fontSize = if (isRound) 70.sp else 82.sp,
+                            fontFamily = FontFamily.SansSerif,
+                            fontWeight = FontWeight.Black,
+                            color = textColor,
+                            letterSpacing = (-2).sp,
+                            modifier = Modifier.offset(x = (-4).dp)
+                        )
+                        Text(
+                            text = minStr,
+                            fontSize = if (isRound) 38.sp else 46.sp,
+                            fontFamily = FontFamily.SansSerif,
+                            fontWeight = FontWeight.Bold,
+                            color = textColor,
+                            letterSpacing = (-1).sp,
+                            modifier = Modifier.offset(y = if (isRound) 10.dp else 12.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(if (isRound) 2.dp else 6.dp))
+
+                    // Fila Inferior: Icono Clima + Separador | + Fecha en Español (VIE 8)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                        modifier = Modifier.offset(x = (-6).dp)
+                    ) {
+                        // Icono minimalista de Sol con Nube dibujado en trazo fino como en la foto
+                        Canvas(modifier = Modifier.size(if (isRound) 22.dp else 25.dp)) {
+                            val w = size.width
+                            val h = size.height
+                            val iconColor = textColor.copy(alpha = 0.88f)
+
+                            // Sol detrás
+                            drawCircle(
+                                color = iconColor,
+                                radius = w * 0.17f,
+                                center = Offset(w * 0.62f, h * 0.36f),
+                                style = Stroke(width = 1.6f)
+                            )
+                            // Rayitos de sol superiores
+                            val sunC = Offset(w * 0.62f, h * 0.36f)
+                            val rRay1 = w * 0.23f
+                            val rRay2 = w * 0.31f
+                            for (angle in listOf(-40f, 5f, 50f)) {
+                                val rad = Math.toRadians(angle.toDouble())
+                                val p1 = Offset(sunC.x + (rRay1 * kotlin.math.cos(rad)).toFloat(), sunC.y - (rRay1 * kotlin.math.sin(rad)).toFloat())
+                                val p2 = Offset(sunC.x + (rRay2 * kotlin.math.cos(rad)).toFloat(), sunC.y - (rRay2 * kotlin.math.sin(rad)).toFloat())
+                                drawLine(iconColor, p1, p2, strokeWidth = 1.6f, cap = StrokeCap.Round)
+                            }
+
+                            // Silueta de nube frontal
+                            val cloudPath = Path().apply {
+                                val cy = h * 0.68f
+                                moveTo(w * 0.20f, cy)
+                                quadraticTo(w * 0.14f, cy - h * 0.18f, w * 0.32f, cy - h * 0.18f)
+                                quadraticTo(w * 0.44f, cy - h * 0.38f, w * 0.62f, cy - h * 0.20f)
+                                quadraticTo(w * 0.78f, cy - h * 0.18f, w * 0.76f, cy)
+                                lineTo(w * 0.20f, cy)
+                                close()
+                            }
+                            drawPath(
+                                path = cloudPath,
+                                color = iconColor,
+                                style = Stroke(width = 1.6f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(if (isRound) 8.dp else 10.dp))
+
+                        // Línea divisoria vertical fina
+                        Box(
+                            modifier = Modifier
+                                .width(1.2.dp)
+                                .height(if (isRound) 15.dp else 18.dp)
+                                .background(dividerColor)
+                        )
+
+                        Spacer(modifier = Modifier.width(if (isRound) 8.dp else 10.dp))
+
+                        // Fecha en Español en mayúsculas estilo nórdico (ej: VIE 8)
+                        Text(
+                            text = dateStr,
+                            fontSize = if (isRound) 15.sp else 17.5.sp,
+                            fontFamily = FontFamily.SansSerif,
+                            fontWeight = FontWeight.Bold,
+                            color = textColor,
+                            letterSpacing = 0.8.sp
+                        )
+                    }
+                }
+            }
         }
     }
 }

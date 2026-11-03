@@ -187,6 +187,8 @@ class JarvisVoiceManager(private val context: Context) : TextToSpeech.OnInitList
                 Triple(JarvisMode.AUDIO_PLAYER, ModuleId.AUDIO_PLAYER, "Reproductor de Audio Hi-Fi")
             t.contains("video") || t.contains("monitor") || t.contains("camara") || t.contains("cámara") ->
                 Triple(JarvisMode.VIDEO_PLAYER, ModuleId.VIDEO_PLAYER, "Monitor de Video Industrial")
+            t.contains("esfera") || t.contains("reloj realista") || t.contains("watchface") || t.contains("hora actual") ->
+                Triple(JarvisMode.WATCHFACE, null, "Esfera Minimalista Realista")
             t.contains("reloj") || t.contains("telemetria") || t.contains("telemetría") || t.contains("sensor") || t.contains("clima") || t.contains("brujula") || t.contains("brújula") || t.contains("temperatura") || t.contains("humedad") ->
                 Triple(JarvisMode.STANDBY, null, "Reloj & Telemetría")
             else ->
@@ -206,6 +208,8 @@ class JarvisVoiceManager(private val context: Context) : TextToSpeech.OnInitList
             "He abierto el módulo de $name y activé el modo reunión continua. Me quedo escuchando y transcribiendo cada intervención en vivo."
         } else if (mode == JarvisMode.RECORDER) {
             "He abierto la $name. Lista en pantalla para registrar audio y transcribir con IA."
+        } else if (mode == JarvisMode.WATCHFACE) {
+            "Aquí tienes la Esfera de Reloj Realista con hora y fecha en español."
         } else if (mode == JarvisMode.STANDBY) {
             "Aquí tienes la pantalla de $name con el clima de tu ubicación, brújula y satélites GPS."
         } else if (mode == JarvisMode.ROBOT) {

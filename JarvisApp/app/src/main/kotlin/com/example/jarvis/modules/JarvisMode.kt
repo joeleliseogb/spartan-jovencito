@@ -8,6 +8,7 @@ package com.example.jarvis.modules
  */
 enum class JarvisMode(val title: String) {
     ROBOT("ROBOT LIVE"),
+    WATCHFACE("ESFERA REALISTA"),
     STANDBY("RELOJ & TELEMETRÍA"),
     RECORDER("GRABADORA"),
     AUDIO_PLAYER("AUDIO PLAYER"),
