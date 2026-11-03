@@ -4369,6 +4369,8 @@ private fun MinutesScreen(
     var recordingSeconds by remember { mutableLongStateOf(0L) }
     var previewPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
     var isPreviewPlaying by remember { mutableStateOf(false) }
+    val lastExecutiveReport by voiceManager.lastMeetingReport.collectAsState()
+    var selectedMeetingTab by remember { mutableIntStateOf(0) }
 
     val speakerZone1 = remember { mutableStateListOf(*Array(7) { 0.15f }) }
     val speakerZone2 = remember { mutableStateListOf(*Array(7) { 0.12f }) }
@@ -4471,43 +4473,26 @@ private fun MinutesScreen(
         voiceManager.stopConversationMode()
         isRecordingAudio = false
 
-        val txtFile = currentMeetingTxtFile ?: run {
-            val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-            val publicMeetingsDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_RECORDINGS), "JOWELL/Reuniones").apply { mkdirs() }
-            File(publicMeetingsDir, "Reunion_$timeStamp.txt")
-        }
-
         try {
-            val sb = StringBuilder()
-            sb.appendLine("======================================================================")
-            sb.appendLine("CDPE GUATEMALA - ACTA Y MINUTA DE REUNIÓN EJECUTIVA")
-            sb.appendLine("Fecha y Hora: ${SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault()).format(Date())}")
-            sb.appendLine("Archivo de Audio Asociado: ${currentMeetingAudioFile?.name ?: "No grabado"}")
-            sb.appendLine("Ubicación: Guatemala (Centro de Desarrollo y Promoción Empresarial)")
-            sb.appendLine("Total de Intervenciones: ${history.size}")
-            sb.appendLine("======================================================================\n")
+            val report = voiceManager.finalizeAndProcessMeeting(
+                audioFile = currentMeetingAudioFile,
+                durationSeconds = recordingSeconds
+            )
+            selectedMeetingTab = 0
+            meetingSavedMessage = "✅ Acta guardada: ${File(report.savedFilePath).name}"
 
-            if (history.isEmpty()) {
-                sb.appendLine("[Acta de reunión iniciada. No se registraron intervenciones habladas]")
+            val spokenMsg = if (report.scheduledEvents.isNotEmpty()) {
+                val ev = report.scheduledEvents.first()
+                "Reunión finalizada. Registré ${report.agreements.size} acuerdos y agendé automáticamente ${ev.title} para ${ev.dateDescription} en tu agenda."
+            } else if (report.agreements.isNotEmpty()) {
+                "Reunión finalizada. Registré ${report.agreements.size} acuerdos en el acta ejecutiva."
             } else {
-                for (turn in history) {
-                    val speaker = if (turn.role == "user") "INTERLOCUTOR / JOEL" else "ASISTENTE JOWELL"
-                    sb.appendLine("[${turn.timestamp}] $speaker:")
-                    sb.appendLine(turn.text)
-                    sb.appendLine()
-                }
+                "Reunión finalizada. Acta guardada en el dispositivo."
             }
-
-            txtFile.writeText(sb.toString())
-
-            val filesToScan = mutableListOf(txtFile.absolutePath)
-            currentMeetingAudioFile?.let { if (it.exists()) filesToScan.add(it.absolutePath) }
-            MediaScannerConnection.scanFile(context, filesToScan.toTypedArray(), null, null)
-
-            meetingSavedMessage = "Guardado en:\nRecordings/JOWELL/Reuniones/\n${txtFile.name}"
+            voiceManager.speakDirectly(spokenMsg)
         } catch (e: Exception) {
-            Log.e("Minutes", "Error guardando acta", e)
-            meetingSavedMessage = "Error al guardar acta: ${e.message}"
+            Log.e("Minutes", "Error procesando reunión", e)
+            meetingSavedMessage = "Error al procesar acta: ${e.message}"
         }
     }
 
@@ -4662,7 +4647,52 @@ private fun MinutesScreen(
             }
         }
 
-        // Historial continuo de diálogo de la reunión (interlocutores diferenciados)
+        // Pestañas cuando existe un Acta Ejecutiva procesada
+        if (lastExecutiveReport != null) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(if (isRound) 28.dp else 32.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(if (selectedMeetingTab == 0) Color(0xFFE25227) else Color(0xFF1E2430))
+                        .clickable { selectedMeetingTab = 0 },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "📋 ACTA Y ACUERDOS",
+                        fontSize = if (isRound) 9.sp else 10.5.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(if (isRound) 28.dp else 32.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(if (selectedMeetingTab == 1) Color(0xFF00B0FF) else Color(0xFF1E2430))
+                        .clickable { selectedMeetingTab = 1 },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "🗣 DIÁLOGO (${history.size})",
+                        fontSize = if (isRound) 9.sp else 10.5.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
+            }
+        }
+
+        // Contenedor Principal: Vista de Acta Ejecutiva O Historial de Diálogo
         Box(
             modifier = Modifier
                 .weight(1f)
@@ -4672,7 +4702,241 @@ private fun MinutesScreen(
                 .border(1.dp, Color(0xFF222838), RoundedCornerShape(8.dp))
                 .padding(if (isRound) 6.dp else 8.dp)
         ) {
-            if (history.isEmpty()) {
+            val report = lastExecutiveReport
+            if (report != null && selectedMeetingTab == 0) {
+                // VISTA DE ACTA EJECUTIVA Y ACUERDOS
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Cabecera Acta
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = report.title,
+                                fontSize = if (isRound) 11.sp else 12.5.sp,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Black,
+                                color = Color(0xFF00E5FF)
+                            )
+                            Text(
+                                text = "${report.dateFormatted} • Duración: ${report.durationFormatted}",
+                                fontSize = 9.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = Color(0xFF90A4AE)
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Color(0xFF263238))
+                                .clickable { voiceManager.clearLastMeetingReport() }
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(text = "✕ CERRAR", fontSize = 8.5.sp, fontFamily = FontFamily.Monospace, color = Color(0xFFCFD8DC))
+                        }
+                    }
+
+                    // Resumen Ejecutivo
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color(0xFF17202C), RoundedCornerShape(6.dp))
+                            .border(1.dp, Color(0xFF26384D), RoundedCornerShape(6.dp))
+                            .padding(8.dp)
+                    ) {
+                        Text(
+                            text = "SÍNTESIS EJECUTIVA:",
+                            fontSize = 9.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFFFB74D)
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = report.summary,
+                            fontSize = if (isRound) 10.5.sp else 12.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = Color.White,
+                            lineHeight = if (isRound) 15.sp else 17.sp
+                        )
+                    }
+
+                    // Puntos Clave
+                    if (report.keyPoints.isNotEmpty()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFF131E1E), RoundedCornerShape(6.dp))
+                                .border(1.dp, Color(0xFF00897B), RoundedCornerShape(6.dp))
+                            .padding(8.dp)
+                        ) {
+                            Text(
+                                text = "📌 PUNTOS CLAVE TRATADOS:",
+                                fontSize = 9.sp,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF80CBC4)
+                            )
+                            Spacer(modifier = Modifier.height(3.dp))
+                            for (point in report.keyPoints) {
+                                Text(
+                                    text = "• $point",
+                                    fontSize = if (isRound) 10.sp else 11.5.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = Color(0xFFE0F2F1),
+                                    modifier = Modifier.padding(vertical = 1.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    // Acuerdos y Compromisos
+                    if (report.agreements.isNotEmpty()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFF1B2418), RoundedCornerShape(6.dp))
+                                .border(1.dp, Color(0xFF2E7D32), RoundedCornerShape(6.dp))
+                                .padding(8.dp)
+                        ) {
+                            Text(
+                                text = "🤝 ACUERDOS Y COMPROMISOS (${report.agreements.size}):",
+                                fontSize = 9.sp,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF81C784)
+                            )
+                            Spacer(modifier = Modifier.height(3.dp))
+                            report.agreements.forEachIndexed { idx, agr ->
+                                Text(
+                                    text = "${idx + 1}. $agr",
+                                    fontSize = if (isRound) 10.sp else 11.5.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color(0xFFC8E6C9),
+                                    modifier = Modifier.padding(vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    // Citas Agendadas Automáticamente
+                    if (report.scheduledEvents.isNotEmpty()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFF2B1D14), RoundedCornerShape(6.dp))
+                                .border(1.dp, Color(0xFFE65100), RoundedCornerShape(6.dp))
+                                .padding(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "📅 AGENDADO AUTOMÁTICAMENTE:",
+                                    fontSize = 9.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFFFB74D)
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(Color(0xFFE65100))
+                                        .clickable { voiceManager.openModuleByVoice("agenda") }
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = "VER EN AGENDA ➔",
+                                        fontSize = 8.5.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            for (ev in report.scheduledEvents) {
+                                Text(
+                                    text = "🗓 ${ev.title}",
+                                    fontSize = if (isRound) 10.sp else 11.5.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFFFCC80)
+                                )
+                                Text(
+                                    text = "   ⏰ ${ev.dateDescription}",
+                                    fontSize = 9.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = Color(0xFFFFE0B2)
+                                )
+                            }
+                        }
+                    }
+
+                    // Botones de acción del Acta
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(32.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(0xFF00838F))
+                                .clickable {
+                                    voiceManager.speakDirectly(report.spokenSummary)
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "🔊 NARRAR SÍNTESIS",
+                                fontSize = 9.5.sp,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(32.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(0xFF2E7D32))
+                            .clickable {
+                                val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_TEXT, report.fullActaText)
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                context.startActivity(Intent.createChooser(sendIntent, "Compartir Acta Ejecutiva").apply {
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                })
+                            },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "📤 COMPARTIR ACTA",
+                                fontSize = 9.5.sp,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        }
+                    }
+                }
+            } else if (history.isEmpty()) {
                 Column(
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.Center,
@@ -4755,9 +5019,13 @@ private fun MinutesScreen(
                     .clip(RoundedCornerShape(if (isRound) 16.dp else 8.dp))
                     .background(Color(0xFF1A237E))
                     .clickable {
-                        val allText = history.joinToString("\n\n") { "${if (it.role == "user") "Hablante" else "Asistente"}: ${it.text}" }
+                        val textToCopy = if (lastExecutiveReport != null && selectedMeetingTab == 0) {
+                            lastExecutiveReport?.fullActaText ?: ""
+                        } else {
+                            history.joinToString("\n\n") { "${if (it.role == "user") "Hablante" else "Asistente"}: ${it.text}" }
+                        }
                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                        val clip = android.content.ClipData.newPlainText("Transcripción CDPE", allText)
+                        val clip = android.content.ClipData.newPlainText("Transcripción CDPE", textToCopy)
                         clipboard.setPrimaryClip(clip)
                     },
                 contentAlignment = Alignment.Center
@@ -4772,13 +5040,17 @@ private fun MinutesScreen(
                     .clip(RoundedCornerShape(if (isRound) 16.dp else 8.dp))
                     .background(Color(0xFF263238))
                     .clickable {
-                        val allText = history.joinToString("\n\n") { "${if (it.role == "user") "Hablante" else "Asistente"}: ${it.text}" }
+                        val textToShare = if (lastExecutiveReport != null && selectedMeetingTab == 0) {
+                            lastExecutiveReport?.fullActaText ?: ""
+                        } else {
+                            "--- ACTAS Y MINUTAS CDPE ---\n\n" + history.joinToString("\n\n") { "${if (it.role == "user") "Hablante" else "Asistente"}: ${it.text}" }
+                        }
                         val sendIntent = Intent(Intent.ACTION_SEND).apply {
                             type = "text/plain"
-                            putExtra(Intent.EXTRA_TEXT, "--- ACTAS Y MINUTAS CDPE ---\n\n$allText")
+                            putExtra(Intent.EXTRA_TEXT, textToShare)
                             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         }
-                        context.startActivity(Intent.createChooser(sendIntent, "Compartir acta").apply {
+                        context.startActivity(Intent.createChooser(sendIntent, "Compartir").apply {
                             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         })
                     },
@@ -4792,7 +5064,10 @@ private fun MinutesScreen(
                     .size(if (isRound) 32.dp else 36.dp)
                     .clip(RoundedCornerShape(if (isRound) 16.dp else 8.dp))
                     .background(Color(0xFF3E1717))
-                    .clickable { voiceManager.clearConversationHistory() },
+                    .clickable {
+                        voiceManager.clearConversationHistory()
+                        voiceManager.clearLastMeetingReport()
+                    },
                 contentAlignment = Alignment.Center
             ) {
                 Text(text = "🗑", fontSize = if (isRound) 13.sp else 15.sp, color = Color(0xFFFF5252))

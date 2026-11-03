@@ -163,58 +163,68 @@ class DeviceAssistantManager(private val context: Context) {
     }
 
     fun getTodayEvents(): String {
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALENDAR) != PackageManager.PERMISSION_GRANTED) {
-            return "No cuento con permiso para leer el calendario en este momento."
+        val list = getStructuredTodayEvents()
+        if (list.isEmpty()) {
+            return "No tienes citas programadas para hoy en tu agenda. ¡Día libre para avanzar en proyectos!"
         }
+        val lines = list.take(5).map { "• ${it.title} (${it.timeFormatted})" }
+        return "Tienes ${list.size} compromiso(s) en tu agenda:\n" + lines.joinToString("\n")
+    }
 
-        val eventsList = mutableListOf<String>()
+    private val customEventsPrefs by lazy {
+        context.getSharedPreferences("jowell_custom_events", Context.MODE_PRIVATE)
+    }
+
+    fun addDirectAgendaEvent(title: String, timeFormatted: String, dateMillis: Long, description: String = "") {
         try {
-            val startOfDay = Calendar.getInstance().apply {
-                set(Calendar.HOUR_OF_DAY, 0)
-                set(Calendar.MINUTE, 0)
-                set(Calendar.SECOND, 0)
-            }.timeInMillis
-
-            val endOfDay = Calendar.getInstance().apply {
-                set(Calendar.HOUR_OF_DAY, 23)
-                set(Calendar.MINUTE, 59)
-                set(Calendar.SECOND, 59)
-            }.timeInMillis
-
-            val uri = CalendarContract.Events.CONTENT_URI
-            val projection = arrayOf(
-                CalendarContract.Events.TITLE,
-                CalendarContract.Events.DTSTART
-            )
-            val selection = "${CalendarContract.Events.DTSTART} >= ? AND ${CalendarContract.Events.DTSTART} <= ?"
-            val selectionArgs = arrayOf(startOfDay.toString(), endOfDay.toString())
-            val sortOrder = "${CalendarContract.Events.DTSTART} ASC"
-
-            context.contentResolver.query(uri, projection, selection, selectionArgs, sortOrder)?.use { cursor ->
-                val titleIdx = cursor.getColumnIndex(CalendarContract.Events.TITLE)
-                val startIdx = cursor.getColumnIndex(CalendarContract.Events.DTSTART)
-                val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
-
-                while (cursor.moveToNext() && eventsList.size < 5) {
-                    val title = cursor.getString(titleIdx) ?: "Reunión"
-                    val startMillis = cursor.getLong(startIdx)
-                    val timeStr = timeFormat.format(Date(startMillis))
-                    eventsList.add("• $title a las $timeStr")
-                }
+            val currentRaw = customEventsPrefs.getString("events_json", "[]") ?: "[]"
+            val array = org.json.JSONArray(currentRaw)
+            val newObj = org.json.JSONObject().apply {
+                put("title", title)
+                put("timeFormatted", timeFormatted)
+                put("startMillis", dateMillis)
+                put("description", description)
             }
+            array.put(newObj)
+            customEventsPrefs.edit().putString("events_json", array.toString()).apply()
         } catch (e: Exception) {
             e.printStackTrace()
         }
 
-        return if (eventsList.isNotEmpty()) {
-            "Tienes ${eventsList.size} evento(s) en tu agenda hoy:\n" + eventsList.joinToString("\n")
-        } else {
-            "No tienes eventos ni citas programadas para hoy en tu agenda. ¡Día libre para avanzar en proyectos!"
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_CALENDAR) == PackageManager.PERMISSION_GRANTED) {
+            try {
+                val values = ContentValues().apply {
+                    put(CalendarContract.Events.DTSTART, dateMillis)
+                    put(CalendarContract.Events.DTEND, dateMillis + 3600000L)
+                    put(CalendarContract.Events.TITLE, title)
+                    put(CalendarContract.Events.DESCRIPTION, description)
+                    put(CalendarContract.Events.CALENDAR_ID, 1)
+                    put(CalendarContract.Events.EVENT_TIMEZONE, TimeZone.getDefault().id)
+                }
+                context.contentResolver.insert(CalendarContract.Events.CONTENT_URI, values)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 
     fun getStructuredTodayEvents(): List<CalendarEventItem> {
         val list = mutableListOf<CalendarEventItem>()
+
+        // 1. Cargar eventos agendados automáticamente por reuniones y cliente
+        try {
+            val raw = customEventsPrefs.getString("events_json", "[]") ?: "[]"
+            val array = org.json.JSONArray(raw)
+            for (i in (array.length() - 1) downTo 0) {
+                val obj = array.getJSONObject(i)
+                val t = obj.optString("title", "Reunión de Negocios CDPE")
+                val tf = obj.optString("timeFormatted", "10:00 AM")
+                val sm = obj.optLong("startMillis", System.currentTimeMillis())
+                list.add(CalendarEventItem(t, tf, sm))
+                if (list.size >= 15) break
+            }
+        } catch (e: Exception) {}
+
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALENDAR) != PackageManager.PERMISSION_GRANTED) {
             return list
         }
