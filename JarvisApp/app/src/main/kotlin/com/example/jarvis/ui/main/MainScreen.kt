@@ -40,6 +40,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -59,6 +60,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -559,6 +562,92 @@ private fun CircularWatchLayout(
     }
 }
 
+// ==================== BOTÓN PRINCIPAL INDUSTRIAL MECÁNICO (CON LED BLANCO PURO) ====================
+@Composable
+private fun IndustrialMechanicalButton(
+    isSessionActive: Boolean,
+    onClick: () -> Unit,
+    size: Int = 54,
+    modifier: Modifier = Modifier
+) {
+    val whiteLedTransition = rememberInfiniteTransition(label = "whiteLedPulse")
+    val whiteLedGlow by whiteLedTransition.animateFloat(
+        initialValue = 0.65f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(600, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "whiteLedGlow"
+    )
+
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = modifier
+            .size(size.dp)
+            .scale(if (isSessionActive) 0.91f else 1.0f)
+            .shadow(if (isSessionActive) 1.dp else 6.dp, CircleShape)
+            .clip(CircleShape)
+            .background(if (isSessionActive) Color(0xFF381005) else Color(0xFF8D2C0D))
+            .padding(if (isSessionActive) 3.5.dp else 3.dp)
+            .clip(CircleShape)
+            .background(
+                if (isSessionActive)
+                    Brush.verticalGradient(listOf(Color(0xFFD84315), Color(0xFFBF360C), Color(0xFF8A2404)))
+                else
+                    Brush.verticalGradient(listOf(Color(0xFFFF7043), Color(0xFFE64A19), Color(0xFFC73E12)))
+            )
+            .clickable(onClick = onClick)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(vertical = (size * 0.09f).dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            // Indicador LED Blanco Puro
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.size((size * 0.22f).dp)
+            ) {
+                if (isSessionActive) {
+                    Box(
+                        modifier = Modifier
+                            .size((size * 0.26f).dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = 0.5f * whiteLedGlow))
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size((size * 0.13f).dp)
+                            .clip(CircleShape)
+                            .background(Color.White)
+                            .border(0.6.dp, Color(0xFFEEEEEE), CircleShape)
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .size((size * 0.12f).dp)
+                            .clip(CircleShape)
+                            .background(Color(0x35FFFFFF))
+                            .border(0.6.dp, Color(0x40000000), CircleShape)
+                    )
+                }
+            }
+
+            // Checkmark ✔ grabado
+            Text(
+                text = "✔",
+                fontSize = if (isSessionActive) (size * 0.31f).sp else (size * 0.35f).sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+                color = if (isSessionActive) Color.White else Color(0xFF261208)
+            )
+        }
+    }
+}
+
 // ==================== DISPOSICIÓN INDUSTRIAL RECTANGULAR (TELÉFONOS Y TABLETAS) ====================
 @Composable
 private fun RectangularIndustrialLayout(
@@ -586,253 +675,334 @@ private fun RectangularIndustrialLayout(
     telemetry: com.example.jarvis.sensors.TelemetrySnapshot,
     onOpenSettings: () -> Unit
 ) {
-    Box(
-        modifier = chassisModifier
-            .background(chassisColor)
+    BoxWithConstraints(
+        modifier = chassisModifier.background(chassisColor)
     ) {
-        // Ranuras mecánicas de la carcasa retro
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .drawBehind {
-                    val rightPanelX = size.width * 0.72f
-                    val topSeamY = size.height * 0.16f
-                    val midSeamY = size.height * 0.68f
+        val isPhonePortrait = maxHeight > maxWidth * 1.12f
 
-                    drawLine(seamLineColor, Offset(rightPanelX, 0f), Offset(rightPanelX, size.height), strokeWidth = 2.5f)
-                    drawLine(seamLineColor, Offset(rightPanelX, topSeamY), Offset(size.width, topSeamY), strokeWidth = 2f)
-                    drawLine(seamLineColor, Offset(rightPanelX, midSeamY), Offset(size.width, midSeamY), strokeWidth = 2f)
-                }
-        )
+        if (isPhonePortrait) {
+            // ==================== DISPOSICIÓN VERTICAL ERGONÓMICA (SMARTPHONES EN RETRATO) ====================
+            // Pantalla OLED a TODO LO ANCHO arriba (96% de la pantalla) sin desperdiciar espacio.
+            // Mandos físicos retro en la barra inferior (Rocker Switch + JOWELL + Botón Naranja Mecánico con LED Blanco).
+            Column(modifier = Modifier.fillMaxSize()) {
+                // PANTALLA OLED DINÁMICA A TODO LO ANCHO
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .padding(start = 8.dp, top = 8.dp, end = 8.dp, bottom = 4.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(screenBg)
+                        .border(1.5.dp, Color(0xFF1E1E1E), RoundedCornerShape(16.dp))
+                        .padding(6.dp)
+                ) {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        // DOCK DE ACCESO DIRECTO A MÓDULOS (UN TOQUE)
+                        ModuleNavigationDock(
+                            availableModes = availableModes,
+                            currentModeIndex = currentModeIndex,
+                            onModeChange = onModeChange,
+                            isCompact = false,
+                            modifier = Modifier.padding(bottom = 6.dp)
+                        )
 
-        Row(modifier = Modifier.fillMaxSize()) {
-            // ==================== PANTALLA OLED DINÁMICA (LADO IZQUIERDO - 72% ANCHO) ====================
-            Box(
-                modifier = Modifier
-                    .weight(0.72f)
-                    .fillMaxHeight()
-                    .padding(start = 10.dp, top = 10.dp, bottom = 10.dp, end = 6.dp)
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(screenBg)
-                    .border(1.5.dp, Color(0xFF1E1E1E), RoundedCornerShape(18.dp))
-                    .padding(8.dp)
-            ) {
-                Column(modifier = Modifier.fillMaxSize()) {
-                    // DOCK DE ACCESO DIRECTO A MÓDULOS (UN TOQUE)
-                    ModuleNavigationDock(
-                        availableModes = availableModes,
-                        currentModeIndex = currentModeIndex,
-                        onModeChange = onModeChange,
-                        isCompact = false,
-                        modifier = Modifier.padding(bottom = 6.dp)
-                    )
-
-                    // CONTENIDO DEL MÓDULO ACTIVO
-                    Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                        AnimatedContent(
-                            targetState = currentMode,
-                            transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(200)) },
-                            label = "modeSwap"
-                        ) { mode ->
-                            when (mode) {
-                                JarvisMode.ROBOT -> RobotLiveScreen(
-                                    state = state,
-                                    liveText = liveText,
-                                    lastResponse = lastResponse,
-                                    operatingMode = operatingMode,
-                                    activeCampaignProject = activeCampaignProject,
-                                    telemetry = telemetry,
-                                    onOpenSettings = onOpenSettings,
-                                    isRound = false
-                                )
-                                JarvisMode.RECORDER -> RecorderScreen(voiceManager, isRound = false)
-                                JarvisMode.AUDIO_PLAYER -> AudioPlayerScreen(isRound = false)
-                                JarvisMode.VIDEO_PLAYER -> VideoPlayerScreen(isRound = false)
-                                JarvisMode.READER -> PdfReaderScreen(voiceManager, isRound = false)
-                                JarvisMode.MINUTES -> MinutesScreen(voiceManager, liveText, lastResponse, isRound = false)
-                                JarvisMode.AGENDA -> AgendaScreen(voiceManager, isRound = false)
-                                JarvisMode.STANDBY -> StandbyScreen(telemetry, isRound = false, onOpenSettings = onOpenSettings)
+                        // CONTENIDO DEL MÓDULO ACTIVO
+                        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                            AnimatedContent(
+                                targetState = currentMode,
+                                transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(200)) },
+                                label = "modeSwap"
+                            ) { mode ->
+                                when (mode) {
+                                    JarvisMode.ROBOT -> RobotLiveScreen(
+                                        state = state,
+                                        liveText = liveText,
+                                        lastResponse = lastResponse,
+                                        operatingMode = operatingMode,
+                                        activeCampaignProject = activeCampaignProject,
+                                        telemetry = telemetry,
+                                        onOpenSettings = onOpenSettings,
+                                        isRound = false
+                                    )
+                                    JarvisMode.RECORDER -> RecorderScreen(voiceManager, isRound = false)
+                                    JarvisMode.AUDIO_PLAYER -> AudioPlayerScreen(isRound = false)
+                                    JarvisMode.VIDEO_PLAYER -> VideoPlayerScreen(isRound = false)
+                                    JarvisMode.READER -> PdfReaderScreen(voiceManager, isRound = false)
+                                    JarvisMode.MINUTES -> MinutesScreen(voiceManager, liveText, lastResponse, isRound = false)
+                                    JarvisMode.AGENDA -> AgendaScreen(voiceManager, isRound = false)
+                                    JarvisMode.STANDBY -> StandbyScreen(telemetry, isRound = false, onOpenSettings = onOpenSettings)
+                                }
                             }
                         }
+                    }
+                }
+
+                // BARRA INFERIOR DE MANDOS INDUSTRIALES RETRO (ERGONÓMICA PARA EL PULGAR)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(76.dp)
+                        .padding(start = 8.dp, end = 8.dp, bottom = 6.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(chassisColor)
+                        .border(1.2.dp, chassisBorder, RoundedCornerShape(14.dp))
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Izquierda: Rejilla de altavoz + J O W E L L + Telemetría
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(2.5.dp)) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(2.5.dp)) {
+                                    Box(modifier = Modifier.size(3.5.dp).background(Color(0xFF5A5752), CircleShape))
+                                    Box(modifier = Modifier.size(3.5.dp).background(Color(0xFF5A5752), CircleShape))
+                                    Box(modifier = Modifier.size(3.5.dp).background(Color(0xFF5A5752), CircleShape))
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(2.5.dp)) {
+                                    Box(modifier = Modifier.size(3.5.dp).background(Color(0xFF5A5752), CircleShape))
+                                    Box(modifier = Modifier.size(3.5.dp).background(Color(0xFF5A5752), CircleShape))
+                                    Box(modifier = Modifier.size(3.5.dp).background(Color(0xFF5A5752), CircleShape))
+                                }
+                            }
+
+                            Column(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .clickable { onOpenSettings() }
+                                    .padding(horizontal = 4.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = "J O W E L L",
+                                    fontSize = 11.5.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Black,
+                                    letterSpacing = 2.sp,
+                                    color = Color(0xFF261208)
+                                )
+                                Text(
+                                    text = "${telemetry.headingDegrees}°${telemetry.cardinalDirection} · ${telemetry.batteryLevel}%${if (telemetry.isCharging) "⚡" else ""}",
+                                    fontSize = 8.5.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF5A5752)
+                                )
+                            }
+                        }
+
+                        // Centro: Botón Basculante Horizontal (◄ ►) para cambiar módulos
+                        Row(
+                            modifier = Modifier
+                                .height(44.dp)
+                                .shadow(5.dp, RoundedCornerShape(22.dp))
+                                .clip(RoundedCornerShape(22.dp))
+                                .background(rockerColor)
+                                .border(1.dp, rockerBorder, RoundedCornerShape(22.dp)),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .width(40.dp)
+                                    .fillMaxHeight()
+                                    .clickable {
+                                        onModeChange((currentModeIndex - 1 + availableModes.size) % availableModes.size)
+                                    }
+                            ) {
+                                Text(text = "◄", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF4A4742))
+                            }
+                            Box(modifier = Modifier.width(1.dp).height(24.dp).background(Color(0xFF9E9A92)))
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .width(40.dp)
+                                    .fillMaxHeight()
+                                    .clickable {
+                                        onModeChange((currentModeIndex + 1) % availableModes.size)
+                                    }
+                            ) {
+                                Text(text = "►", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF4A4742))
+                            }
+                        }
+
+                        // Derecha: Botón Naranja Mecánico con LED Blanco
+                        IndustrialMechanicalButton(
+                            isSessionActive = isSessionActive,
+                            onClick = { voiceManager.toggleConversationMode() },
+                            size = 52
+                        )
                     }
                 }
             }
-
-            // ==================== MANDOS FÍSICOS INDUSTRIALES (LADO DERECHO - 28% ANCHO) ====================
-            Column(
+        } else {
+            // ==================== DISPOSICIÓN HORIZONTAL / TABLET (LADO A LADO 72% / 28%) ====================
+            Box(
                 modifier = Modifier
-                    .weight(0.28f)
-                    .fillMaxHeight()
-                    .padding(top = 10.dp, bottom = 10.dp, end = 10.dp, start = 6.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.SpaceBetween
-            ) {
-                // Indicadores LED de Modos / Selector de Voz
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier
-                        .padding(top = 2.dp)
-                        .clickable { voiceManager.cycleVoiceType() }
-                ) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                        Box(modifier = Modifier.size(3.5.dp).background(Color(0xFF555555), RoundedCornerShape(1.dp)))
-                        Box(modifier = Modifier.size(3.5.dp).background(Color(0xFF555555), RoundedCornerShape(1.dp)))
-                        Box(modifier = Modifier.size(4.dp).background(orangeButton, RoundedCornerShape(1.dp)))
-                        Box(modifier = Modifier.size(3.5.dp).background(Color(0xFF555555), RoundedCornerShape(1.dp)))
-                        Box(modifier = Modifier.size(3.5.dp).background(Color(0xFF555555), RoundedCornerShape(1.dp)))
-                    }
-                    Spacer(modifier = Modifier.height(3.dp))
-                    Text(
-                        text = voiceType.shortName,
-                        fontSize = 9.5.sp,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF383530)
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = "${telemetry.headingDegrees}°${telemetry.cardinalDirection} · ${telemetry.batteryLevel}%",
-                        fontSize = 8.5.sp,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF4E4B45)
-                    )
-                }
+                    .fillMaxSize()
+                    .drawBehind {
+                        val rightPanelX = size.width * 0.72f
+                        val topSeamY = size.height * 0.16f
+                        val midSeamY = size.height * 0.68f
 
-                // Botón Basculante Dual (Rocker Switch: Arriba/Abajo para cambiar modo con confirmación táctil)
-                Column(
-                    modifier = Modifier
-                        .width(48.dp)
-                        .shadow(6.dp, RoundedCornerShape(24.dp))
-                        .clip(RoundedCornerShape(24.dp))
-                        .background(rockerColor)
-                        .border(1.dp, rockerBorder, RoundedCornerShape(24.dp)),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(40.dp)
-                            .clickable {
-                                onModeChange((currentModeIndex - 1 + availableModes.size) % availableModes.size)
-                            }
-                    ) {
-                        Text(text = "▲", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF5A5752))
+                        drawLine(seamLineColor, Offset(rightPanelX, 0f), Offset(rightPanelX, size.height), strokeWidth = 2.5f)
+                        drawLine(seamLineColor, Offset(rightPanelX, topSeamY), Offset(size.width, topSeamY), strokeWidth = 2f)
+                        drawLine(seamLineColor, Offset(rightPanelX, midSeamY), Offset(size.width, midSeamY), strokeWidth = 2f)
                     }
-                    Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color(0xFF9E9A92)))
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(40.dp)
-                            .clickable {
-                                onModeChange((currentModeIndex + 1) % availableModes.size)
-                            }
-                    ) {
-                        Text(text = "▼", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF5A5752))
-                    }
-                }
+            )
 
-                // BOTÓN PRINCIPAL NARANJA MECÁNICO CON LED BLANCO (Efecto Presionado / Suelto con contraste puro)
-                val whiteLedTransition = rememberInfiniteTransition(label = "whiteLedPulse")
-                val whiteLedGlow by whiteLedTransition.animateFloat(
-                    initialValue = 0.65f,
-                    targetValue = 1.0f,
-                    animationSpec = infiniteRepeatable(
-                        animation = tween(600, easing = LinearEasing),
-                        repeatMode = RepeatMode.Reverse
-                    ),
-                    label = "whiteLedGlow"
-                )
-
+            Row(modifier = Modifier.fillMaxSize()) {
+                // PANTALLA OLED
                 Box(
-                    contentAlignment = Alignment.Center,
                     modifier = Modifier
-                        .size(54.dp)
-                        .scale(if (isSessionActive) 0.91f else 1.0f)
-                        .shadow(if (isSessionActive) 1.dp else 6.dp, CircleShape)
-                        .clip(CircleShape)
-                        .background(if (isSessionActive) Color(0xFF381005) else Color(0xFF8D2C0D))
-                        .padding(if (isSessionActive) 3.5.dp else 3.dp)
-                        .clip(CircleShape)
-                        .background(
-                            if (isSessionActive)
-                                Brush.verticalGradient(listOf(Color(0xFFD84315), Color(0xFFBF360C), Color(0xFF8A2404)))
-                            else
-                                Brush.verticalGradient(listOf(Color(0xFFFF7043), Color(0xFFE64A19), Color(0xFFC73E12)))
+                        .weight(0.72f)
+                        .fillMaxHeight()
+                        .padding(start = 10.dp, top = 10.dp, bottom = 10.dp, end = 6.dp)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(screenBg)
+                        .border(1.5.dp, Color(0xFF1E1E1E), RoundedCornerShape(18.dp))
+                        .padding(8.dp)
+                ) {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        ModuleNavigationDock(
+                            availableModes = availableModes,
+                            currentModeIndex = currentModeIndex,
+                            onModeChange = onModeChange,
+                            isCompact = false,
+                            modifier = Modifier.padding(bottom = 6.dp)
                         )
-                        .clickable {
-                            voiceManager.toggleConversationMode()
+
+                        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                            AnimatedContent(
+                                targetState = currentMode,
+                                transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(200)) },
+                                label = "modeSwap"
+                            ) { mode ->
+                                when (mode) {
+                                    JarvisMode.ROBOT -> RobotLiveScreen(
+                                        state = state,
+                                        liveText = liveText,
+                                        lastResponse = lastResponse,
+                                        operatingMode = operatingMode,
+                                        activeCampaignProject = activeCampaignProject,
+                                        telemetry = telemetry,
+                                        onOpenSettings = onOpenSettings,
+                                        isRound = false
+                                    )
+                                    JarvisMode.RECORDER -> RecorderScreen(voiceManager, isRound = false)
+                                    JarvisMode.AUDIO_PLAYER -> AudioPlayerScreen(isRound = false)
+                                    JarvisMode.VIDEO_PLAYER -> VideoPlayerScreen(isRound = false)
+                                    JarvisMode.READER -> PdfReaderScreen(voiceManager, isRound = false)
+                                    JarvisMode.MINUTES -> MinutesScreen(voiceManager, liveText, lastResponse, isRound = false)
+                                    JarvisMode.AGENDA -> AgendaScreen(voiceManager, isRound = false)
+                                    JarvisMode.STANDBY -> StandbyScreen(telemetry, isRound = false, onOpenSettings = onOpenSettings)
+                                }
+                            }
                         }
+                    }
+                }
+
+                // MANDOS LATERALES (TABLETS / MODO HORIZONTAL)
+                Column(
+                    modifier = Modifier
+                        .weight(0.28f)
+                        .fillMaxHeight()
+                        .padding(top = 10.dp, bottom = 10.dp, end = 10.dp, start = 6.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.SpaceBetween
                 ) {
                     Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(vertical = 5.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.SpaceBetween
+                        modifier = Modifier
+                            .padding(top = 2.dp)
+                            .clickable { voiceManager.cycleVoiceType() }
                     ) {
-                        // Indicador LED Blanco Puro (Encendido y Apagado con contraste sobre naranja)
-                        Box(
-                            contentAlignment = Alignment.Center,
-                            modifier = Modifier.size(12.dp)
-                        ) {
-                            if (isSessionActive) {
-                                // Halo de brillo LED blanco puro difuso
-                                Box(
-                                    modifier = Modifier
-                                        .size(13.dp)
-                                        .clip(CircleShape)
-                                        .background(Color.White.copy(alpha = 0.5f * whiteLedGlow))
-                                )
-                                // Diodo LED blanco brillante de alta potencia (ON)
-                                Box(
-                                    modifier = Modifier
-                                        .size(7.dp)
-                                        .clip(CircleShape)
-                                        .background(Color.White)
-                                        .border(0.6.dp, Color(0xFFEEEEEE), CircleShape)
-                                )
-                            } else {
-                                // LED apagado: diodo físico blanco ahumado / traslúcido en reposo (OFF)
-                                Box(
-                                    modifier = Modifier
-                                        .size(6.5.dp)
-                                        .clip(CircleShape)
-                                        .background(Color(0x35FFFFFF))
-                                        .border(0.6.dp, Color(0x40000000), CircleShape)
-                                )
-                            }
+                        Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Box(modifier = Modifier.size(3.5.dp).background(Color(0xFF555555), RoundedCornerShape(1.dp)))
+                            Box(modifier = Modifier.size(3.5.dp).background(Color(0xFF555555), RoundedCornerShape(1.dp)))
+                            Box(modifier = Modifier.size(4.dp).background(orangeButton, RoundedCornerShape(1.dp)))
+                            Box(modifier = Modifier.size(3.5.dp).background(Color(0xFF555555), RoundedCornerShape(1.dp)))
+                            Box(modifier = Modifier.size(3.5.dp).background(Color(0xFF555555), RoundedCornerShape(1.dp)))
                         }
-
-                        // Checkmark ✔ grabado (blanco iluminado si está presionado/activo, oscuro si está suelto)
+                        Spacer(modifier = Modifier.height(3.dp))
                         Text(
-                            text = "✔",
-                            fontSize = if (isSessionActive) 17.sp else 19.sp,
-                            fontWeight = FontWeight.Black,
+                            text = voiceType.shortName,
+                            fontSize = 9.5.sp,
                             fontFamily = FontFamily.Monospace,
-                            color = if (isSessionActive) Color.White else Color(0xFF261208)
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF383530)
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "${telemetry.headingDegrees}°${telemetry.cardinalDirection} · ${telemetry.batteryLevel}%",
+                            fontSize = 8.5.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF4E4B45)
                         )
                     }
-                }
 
-                // Grabado industrial con marca J O W E L L (Abre Ajustes / Centro de Control)
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(6.dp))
-                        .clickable { onOpenSettings() }
-                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "J O W E L L",
-                        fontSize = 9.5.sp,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Black,
-                        letterSpacing = 2.sp,
-                        color = Color(0xFF383530)
+                    Column(
+                        modifier = Modifier
+                            .width(48.dp)
+                            .shadow(6.dp, RoundedCornerShape(24.dp))
+                            .clip(RoundedCornerShape(24.dp))
+                            .background(rockerColor)
+                            .border(1.dp, rockerBorder, RoundedCornerShape(24.dp)),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(40.dp)
+                                .clickable {
+                                    onModeChange((currentModeIndex - 1 + availableModes.size) % availableModes.size)
+                                }
+                        ) {
+                            Text(text = "▲", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF5A5752))
+                        }
+                        Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color(0xFF9E9A92)))
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(40.dp)
+                                .clickable {
+                                    onModeChange((currentModeIndex + 1) % availableModes.size)
+                                }
+                        ) {
+                            Text(text = "▼", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF5A5752))
+                        }
+                    }
+
+                    IndustrialMechanicalButton(
+                        isSessionActive = isSessionActive,
+                        onClick = { voiceManager.toggleConversationMode() },
+                        size = 54
                     )
+
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable { onOpenSettings() }
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "J O W E L L",
+                            fontSize = 9.5.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 2.sp,
+                            color = Color(0xFF383530)
+                        )
+                    }
                 }
             }
         }
@@ -1117,6 +1287,83 @@ private fun PersonalitySettingsDialog(
                                             )
                                         }
                                     }
+                                }
+                            }
+                        }
+
+                        // ==================== CLAVE DE API DE GEMINI (NUBE & TRANSCRIPCIÓN) ====================
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(Color(0xFF141822))
+                                .border(1.2.dp, Color(0xFF00E5FF).copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                                .padding(10.dp)
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "🔑 CLAVE GEMINI API (IA & TRANSCRIPCIÓN)",
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Black,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = Color(0xFF00E5FF)
+                                    )
+                                    if (voiceManager.getCustomApiKey().isNotBlank()) {
+                                        Text(text = "ACTIVA ✓", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF00E676))
+                                    }
+                                }
+
+                                var apiKeyText by remember { mutableStateOf(voiceManager.getCustomApiKey()) }
+                                var savedKeyMsg by remember { mutableStateOf<String?>(null) }
+
+                                OutlinedTextField(
+                                    value = apiKeyText,
+                                    onValueChange = {
+                                        apiKeyText = it
+                                        savedKeyMsg = null
+                                    },
+                                    placeholder = { Text("Pega tu clave AIzaSy... de Google AI Studio", fontSize = 11.sp, color = Color(0xFF757575)) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedTextColor = Color.White,
+                                        unfocusedTextColor = Color.White,
+                                        focusedBorderColor = Color(0xFF00E5FF),
+                                        unfocusedBorderColor = Color(0xFF37474F)
+                                    )
+                                )
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Gratis en aistudio.google.com/apikey",
+                                        fontSize = 9.sp,
+                                        color = Color(0xFF90A4AE)
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(Color(0xFFE25227))
+                                            .clickable {
+                                                voiceManager.setCustomApiKey(apiKeyText)
+                                                savedKeyMsg = "¡Clave guardada con éxito!"
+                                            }
+                                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                                    ) {
+                                        Text(text = "GUARDAR CLAVE", fontSize = 10.sp, fontWeight = FontWeight.Black, color = Color.White)
+                                    }
+                                }
+                                if (savedKeyMsg != null) {
+                                    Text(text = savedKeyMsg!!, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF00E676))
                                 }
                             }
                         }

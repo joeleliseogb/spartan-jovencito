@@ -226,6 +226,23 @@ class JarvisVoiceManager(private val context: Context) : TextToSpeech.OnInitList
     private val apiKey = "AIzaSyAgNbCIJuOqX_KjQbYGA95y3m0eHI80AkA"
     private val modelName = "gemini-flash-lite-latest"
 
+    private val prefs by lazy {
+        context.getSharedPreferences("jowell_ui_prefs", Context.MODE_PRIVATE)
+    }
+
+    fun getEffectiveApiKey(): String {
+        val custom = prefs.getString("custom_gemini_api_key", "")?.trim() ?: ""
+        return if (custom.isNotBlank()) custom else apiKey
+    }
+
+    fun getCustomApiKey(): String {
+        return prefs.getString("custom_gemini_api_key", "")?.trim() ?: ""
+    }
+
+    fun setCustomApiKey(key: String) {
+        prefs.edit().putString("custom_gemini_api_key", key.trim()).apply()
+    }
+
     fun addHistoryTurn(role: String, text: String) {
         val time = SimpleDateFormat("h:mm a", Locale.getDefault()).format(Date())
         conversationHistory.add(ConversationTurn(role, text, time))
@@ -1504,8 +1521,9 @@ class JarvisVoiceManager(private val context: Context) : TextToSpeech.OnInitList
                 })
             }
 
+            val effectiveKey = getEffectiveApiKey()
             val request = Request.Builder()
-                .url("https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$apiKey")
+                .url("https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$effectiveKey")
                 .post(jsonBody.toString().toRequestBody("application/json".toMediaType()))
                 .build()
 
@@ -1748,48 +1766,109 @@ class JarvisVoiceManager(private val context: Context) : TextToSpeech.OnInitList
                 return@withContext "El archivo de audio está vacío o no se encontró."
             }
 
-            val bytes = file.readBytes()
-            val base64Data = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
-            val mimeType = if (file.name.endsWith(".m4a", ignoreCase = true)) "audio/mp4" else "audio/mp4"
+            // 1. Verificar si ya existe una transcripción local (.txt) asociada
+            val companionTxtFiles = listOfNotNull(
+                File(file.parentFile, "${file.nameWithoutExtension}.txt"),
+                File(file.parentFile, "Reunion_${file.nameWithoutExtension.removePrefix("reunion_")}.txt"),
+                File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_RECORDINGS), "JOWELL/Reuniones/${file.nameWithoutExtension}.txt"),
+                File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_RECORDINGS), "JOWELL/Reuniones/Reunion_${file.nameWithoutExtension.removePrefix("reunion_")}.txt")
+            )
+            val existingLocalText = companionTxtFiles.firstOrNull { it.exists() && it.length() > 5 }?.readText()?.trim()
 
-            val json = JSONObject().apply {
-                put("contents", JSONArray().apply {
-                    put(JSONObject().apply {
-                        put("role", "user")
-                        put("parts", JSONArray().apply {
-                            put(JSONObject().apply {
-                                put("inlineData", JSONObject().apply {
-                                    put("mimeType", mimeType)
-                                    put("data", base64Data)
+            // 2. Intentar transcripción con IA en la nube si hay API Key configurada
+            val effectiveKey = getEffectiveApiKey()
+            var cloudText: String? = null
+            var lastHttpCode = 0
+
+            try {
+                val bytes = file.readBytes()
+                val base64Data = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                val mimeType = if (file.name.endsWith(".m4a", ignoreCase = true)) "audio/mp4" else "audio/mp4"
+
+                val json = JSONObject().apply {
+                    put("contents", JSONArray().apply {
+                        put(JSONObject().apply {
+                            put("role", "user")
+                            put("parts", JSONArray().apply {
+                                put(JSONObject().apply {
+                                    put("inlineData", JSONObject().apply {
+                                        put("mimeType", mimeType)
+                                        put("data", base64Data)
+                                    })
                                 })
-                            })
-                            put(JSONObject().apply {
-                                put("text", "Eres Siri, del CDPE. Por favor transcribe este audio grabado con precisión. Identifica los interlocutores por su tono y edad (niñas, niños, jóvenes, mujeres, hombres), extrae los temas tratados y resume los acuerdos de la reunión.")
+                                put(JSONObject().apply {
+                                    put("text", "Eres el Asistente Ejecutivo Siri del CDPE Guatemala. Analiza este audio de reunión o trabajo. Transcribe fielmente las intervenciones separando a los interlocutores (Directores, Socios, Mujeres, Hombres, Niños), resume los puntos tratados y lista los acuerdos alcanzados.")
+                                })
                             })
                         })
                     })
-                })
-            }
-
-            val mediaType = "application/json; charset=utf-8".toMediaType()
-            val body = json.toString().toRequestBody(mediaType)
-            val url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=$apiKey"
-            val request = Request.Builder().url(url).post(body).build()
-
-            val response = httpClient.newCall(request).execute()
-            val respBody = response.body?.string() ?: ""
-            if (response.isSuccessful) {
-                val root = JSONObject(respBody)
-                val candidates = root.optJSONArray("candidates")
-                val candidate = candidates?.optJSONObject(0)
-                val content = candidate?.optJSONObject("content")
-                val parts = content?.optJSONArray("parts")
-                val text = parts?.optJSONObject(0)?.optString("text")?.trim() ?: ""
-                if (text.isNotBlank()) {
-                    return@withContext text
                 }
+
+                val mediaType = "application/json; charset=utf-8".toMediaType()
+                val body = json.toString().toRequestBody(mediaType)
+                val url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=$effectiveKey"
+                val request = Request.Builder().url(url).post(body).build()
+
+                val response = httpClient.newCall(request).execute()
+                lastHttpCode = response.code
+                val respBody = response.body?.string() ?: ""
+
+                if (response.isSuccessful) {
+                    val root = JSONObject(respBody)
+                    val candidates = root.optJSONArray("candidates")
+                    val candidate = candidates?.optJSONObject(0)
+                    val content = candidate?.optJSONObject("content")
+                    val parts = content?.optJSONArray("parts")
+                    val text = parts?.optJSONObject(0)?.optString("text")?.trim() ?: ""
+                    if (text.isNotBlank()) {
+                        cloudText = text
+                        // Guardar en archivo local .txt para acceso offline instantáneo
+                        try {
+                            val cacheTxt = File(file.parentFile, "${file.nameWithoutExtension}.txt")
+                            cacheTxt.writeText(text)
+                            android.media.MediaScannerConnection.scanFile(context, arrayOf(cacheTxt.absolutePath), null, null)
+                        } catch (e: Exception) {}
+                        return@withContext cloudText
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w("Siri", "Fallo al consultar IA en la nube: ${e.message}")
             }
-            return@withContext "No se pudo transcribir el audio (Servidor: HTTP ${response.code})."
+
+            // 3. Si la nube falló pero hay transcripción local grabada, retornarla
+            if (!existingLocalText.isNullOrBlank()) {
+                return@withContext "📋 TRANSCRIPCIÓN LOCAL REGISTRADA:\n\n$existingLocalText"
+            }
+
+            // 4. Si falló la clave (ej. HTTP 403 / 400) y no hay texto, informar constructivamente
+            val durationSec = try {
+                val mmr = android.media.MediaMetadataRetriever()
+                mmr.setDataSource(file.absolutePath)
+                val dur = mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLong() ?: 0L
+                mmr.release()
+                dur / 1000
+            } catch (e: Exception) { 0L }
+
+            val durStr = String.format(Locale.US, "%02d:%02d", durationSec / 60, durationSec % 60)
+            val sizeMb = String.format(Locale.US, "%.1f MB", file.length() / (1024.0 * 1024.0))
+
+            return@withContext """
+                🎙️ REGISTRO DE AUDIO CDPE
+                ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                • Archivo: ${file.name}
+                • Duración: $durStr ($sizeMb)
+                • Ubicación: ${file.parentFile?.name ?: "Recordings"}
+                
+                ⚠️ TRANSCRIPCIÓN CON IA (Servidor: HTTP ${if (lastHttpCode > 0) lastHttpCode else 403})
+                La clave predeterminada de Gemini requiere ser configurada en tu dispositivo.
+                
+                👉 CÓMO ACTIVAR LA TRANSCRIPCIÓN AUTOMÁTICA:
+                1. Toca 'J O W E L L' en la barra inferior para abrir Ajustes.
+                2. En 'Clave Gemini API', pega tu clave gratuita (obtenla en aistudio.google.com).
+                3. Toca 'TRANSCRIBIR CON IA'.
+                
+                💡 TIP: En el módulo 'Minutas' puedes registrar reuniones en vivo con reconocimiento de voz simultáneo en pantalla.
+            """.trimIndent()
         } catch (e: Exception) {
             Log.e("Siri", "Error transcribiendo archivo de audio", e)
             return@withContext "Error en transcripción: ${e.localizedMessage ?: "Fallo de conexión"}"
