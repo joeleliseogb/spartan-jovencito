@@ -2335,6 +2335,7 @@ private fun RecorderScreen(voiceManager: JarvisVoiceManager, isRound: Boolean = 
     // Estado de transcripción con IA
     var isTranscribing by remember { mutableStateOf(false) }
     var transcriptionText by remember { mutableStateOf<String?>(null) }
+    var showApiKeyDialog by remember { mutableStateOf(false) }
 
     // Captura y animación de la onda de audio con diarización multi-orador
     LaunchedEffect(isRecording, isPlaying) {
@@ -2771,6 +2772,105 @@ private fun RecorderScreen(voiceManager: JarvisVoiceManager, isRound: Boolean = 
                         color = Color.White,
                         lineHeight = 18.sp
                     )
+
+                    // Botón de acción directa si la API key requiere configuración
+                    if (transcriptionText?.contains("HTTP 403") == true || transcriptionText?.contains("clave", ignoreCase = true) == true) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(0xFFE25227))
+                                .clickable { showApiKeyDialog = true }
+                                .padding(vertical = 10.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "🔑 INGRESAR CLAVE API DE GEMINI AQUÍ",
+                                fontSize = 11.5.sp,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Black,
+                                color = Color.White
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Modal emergente directo para ingresar la Clave Gemini API
+        if (showApiKeyDialog) {
+            var keyInput by remember { mutableStateOf(voiceManager.getCustomApiKey()) }
+            androidx.compose.ui.window.Dialog(onDismissRequest = { showApiKeyDialog = false }) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(0.95f)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFF141824))
+                        .border(1.5.dp, Color(0xFFE25227), RoundedCornerShape(12.dp))
+                        .padding(16.dp)
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(
+                            text = "🔑 CONFIGURAR CLAVE GEMINI API",
+                            fontSize = 13.5.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Black,
+                            color = Color(0xFFE25227)
+                        )
+                        Text(
+                            text = "Pega tu clave gratuita de Google AI Studio (aistudio.google.com) para transcribir audios de forma ilimitada:",
+                            fontSize = 11.sp,
+                            color = Color(0xFFB0BEC5),
+                            lineHeight = 15.sp
+                        )
+                        OutlinedTextField(
+                            value = keyInput,
+                            onValueChange = { keyInput = it },
+                            placeholder = { Text("Pega aquí tu clave AIzaSy...", color = Color.Gray, fontSize = 11.sp) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = Color(0xFF00E5FF),
+                                unfocusedBorderColor = Color(0xFF37474F)
+                            )
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "CANCELAR",
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.Gray,
+                                modifier = Modifier
+                                    .clickable { showApiKeyDialog = false }
+                                    .padding(8.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(Color(0xFFE25227))
+                                    .clickable {
+                                        voiceManager.setCustomApiKey(keyInput.trim())
+                                        showApiKeyDialog = false
+                                        transcribeCurrentRecording()
+                                    }
+                                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                            ) {
+                                Text(
+                                    text = "GUARDAR Y TRANSCRIBIR",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = Color.White
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -4362,44 +4462,14 @@ private fun MinutesScreen(
             isPreviewPlaying = false
         } catch (e: Exception) {}
 
-        try {
-            val rec = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                MediaRecorder(context)
-            } else {
-                @Suppress("DEPRECATION")
-                MediaRecorder()
-            }.apply {
-                setAudioSource(MediaRecorder.AudioSource.MIC)
-                setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-                setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-                setAudioEncodingBitRate(128000)
-                setAudioSamplingRate(44100)
-                setOutputFile(audioFile.absolutePath)
-                prepare()
-                start()
-            }
-            mediaRecorder = rec
-            isRecordingAudio = true
-        } catch (e: Exception) {
-            Log.w("Minutes", "No se pudo iniciar grabación MediaRecorder en paralelo", e)
-        }
-
+        // Iniciar transcriptor en vivo con prioridad exclusiva de micrófono (sin colisión de hardware)
+        isRecordingAudio = true
         voiceManager.startConversationMode()
     }
 
     fun stopAndSaveMeetingSession() {
         voiceManager.stopConversationMode()
-
-        try {
-            if (isRecordingAudio) {
-                mediaRecorder?.stop()
-                mediaRecorder?.release()
-                mediaRecorder = null
-                isRecordingAudio = false
-            }
-        } catch (e: Exception) {
-            Log.e("Minutes", "Error deteniendo grabación de audio", e)
-        }
+        isRecordingAudio = false
 
         val txtFile = currentMeetingTxtFile ?: run {
             val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
