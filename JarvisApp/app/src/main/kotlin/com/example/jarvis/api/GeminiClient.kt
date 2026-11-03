@@ -23,7 +23,8 @@ data class JarvisResponse(
 )
 
 object GeminiConfig {
-    const val DEFAULT_API_KEY = "AIzaSyAgNbCIJuOqX_KjQbYGA95y3m0eHI80AkA"
+    val DEFAULT_API_KEY: String
+        get() = com.example.jarvis.BuildConfig.GEMINI_API_KEY
     const val MODEL_NAME = "gemini-flash-latest"
 }
 

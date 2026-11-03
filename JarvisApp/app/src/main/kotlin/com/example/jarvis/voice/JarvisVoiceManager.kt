@@ -242,7 +242,8 @@ class JarvisVoiceManager(private val context: Context) : TextToSpeech.OnInitList
         .readTimeout(25, TimeUnit.SECONDS)
         .build()
 
-    private val apiKey = "AIzaSyAgNbCIJuOqX_KjQbYGA95y3m0eHI80AkA"
+    private val apiKey: String
+        get() = com.example.jarvis.BuildConfig.GEMINI_API_KEY
     private val modelName = "gemini-flash-lite-latest"
 
     val meetingEngine by lazy {
