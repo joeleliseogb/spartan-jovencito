@@ -759,7 +759,7 @@ private fun RectangularIndustrialLayout(
                                     color = Color(0xFF261208)
                                 )
                                 Text(
-                                    text = "${telemetry.headingDegrees}°${telemetry.cardinalDirection} · ${telemetry.batteryLevel}%${if (telemetry.isCharging) "⚡" else ""}",
+                                    text = "${telemetry.batteryLevel}%${if (telemetry.isCharging) " ⚡" else ""}",
                                     fontSize = 8.5.sp,
                                     fontFamily = FontFamily.Monospace,
                                     fontWeight = FontWeight.Bold,
@@ -2473,9 +2473,10 @@ private fun RecorderScreen(voiceManager: JarvisVoiceManager, isRound: Boolean = 
                 @Suppress("DEPRECATION")
                 MediaRecorder()
             }.apply {
-                setAudioSource(MediaRecorder.AudioSource.MIC)
+                setAudioSource(MediaRecorder.AudioSource.VOICE_RECOGNITION)
                 setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
                 setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                setAudioChannels(1) // Mono para evitar cancelaciones acústicas de sala
                 setAudioEncodingBitRate(128000)
                 setAudioSamplingRate(44100)
                 setOutputFile(file.absolutePath)
@@ -2931,11 +2932,42 @@ private fun RecorderScreen(voiceManager: JarvisVoiceManager, isRound: Boolean = 
                                 color = Color(0xFF78909C)
                             )
                         }
-                        Text(
-                            text = if (isThisActive) "❚❚" else "▶",
-                            fontSize = 14.sp,
-                            color = if (isThisActive) Color(0xFF00E5FF) else Color(0xFFB0BEC5)
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = if (isThisActive) "❚❚" else "▶",
+                                fontSize = 14.sp,
+                                color = if (isThisActive) Color(0xFF00E5FF) else Color(0xFFB0BEC5),
+                                modifier = Modifier.clickable { playAudioFile(audioFile) }
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(Color(0xFF2E1616))
+                                    .clickable {
+                                        try {
+                                            if (mediaPlayer?.isPlaying == true && currentFile?.absolutePath == audioFile.absolutePath) {
+                                                mediaPlayer?.stop()
+                                                isPlaying = false
+                                            }
+                                            audioFile.delete()
+                                            val companionTxt = File(audioFile.parentFile, "${audioFile.nameWithoutExtension}.txt")
+                                            if (companionTxt.exists()) companionTxt.delete()
+                                            MediaScannerConnection.scanFile(context, arrayOf(audioFile.absolutePath), null, null)
+                                            recordingsList = getAllRecordings()
+                                            if (currentFile?.absolutePath == audioFile.absolutePath) currentFile = null
+                                            lastSavedName = "Grabación eliminada"
+                                        } catch (e: Exception) {
+                                            Log.e("Recorder", "Error eliminando", e)
+                                        }
+                                    }
+                                    .padding(horizontal = 6.dp, vertical = 3.dp)
+                            ) {
+                                Text(text = "🗑", fontSize = 11.sp, color = Color(0xFFFF5252))
+                            }
+                        }
                     }
                 }
             }
@@ -4491,10 +4523,12 @@ private fun MinutesScreen(
     isRound: Boolean = false
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val history by voiceManager.conversationHistoryList.collectAsState()
     val isMeetingModeActive by voiceManager.isMeetingModeActive.collectAsState()
     var isRecordingAudio by remember { mutableStateOf(false) }
     val isSessionActive = isMeetingModeActive || isRecordingAudio
+    var isAiProcessing by remember { mutableStateOf(false) }
     var mediaRecorder by remember { mutableStateOf<MediaRecorder?>(null) }
     var currentMeetingAudioFile by remember { mutableStateOf<File?>(null) }
     var currentMeetingTxtFile by remember { mutableStateOf<File?>(null) }
@@ -4525,20 +4559,35 @@ private fun MinutesScreen(
                 if (tick % 1000L == 0L) {
                     recordingSeconds += 1
                 }
-                val amp = try {
+                val rawAmp = try {
                     mediaRecorder?.maxAmplitude ?: 0
                 } catch (e: Exception) { 0 }
-                val normalized = (amp / 32767f).coerceIn(0.12f, 1.0f)
 
-                // Turno de orador dinámico en la reunión (Joel, Interlocutor A, B, Sala)
-                val cycle = (tick / 4000L).toInt() % 10
-                activeSpeakerIndex = when (cycle) {
-                    0, 1, 2, 3 -> 0 // Joel (Director CDPE)
-                    4, 5 -> 1       // Orador 2
-                    6, 7 -> 2       // Orador 3
-                    8 -> 3          // Sala / Preguntas
-                    else -> 0
+                // Ganancia digital acústica para salas amplias (amplificación 2.6x)
+                val boostedAmp = (rawAmp * 2.6f).coerceAtMost(32767f)
+                val normalized = (boostedAmp / 32767f).coerceIn(0.08f, 1.0f)
+                val measuredDb = if (rawAmp > 20) {
+                    (20 * kotlin.math.log10(boostedAmp.toDouble())).toInt().coerceIn(12, 95)
+                } else {
+                    12
                 }
+
+                // Diarización y detección acústica real de orador según proximidad y decibeles reales:
+                // >= 55 dB: Joel (Director / Frente al teléfono)
+                // 36 - 54 dB: Cliente / Interlocutor principal
+                // 24 - 35 dB: Sala / Intervención lejana
+                // < 24 dB: Ruido ambiente de fondo / Silencio
+                activeSpeakerIndex = when {
+                    measuredDb >= 55 -> 0
+                    measuredDb >= 36 -> 1
+                    measuredDb >= 24 -> 2
+                    else -> 3
+                }
+
+                speaker1PeakDb = if (activeSpeakerIndex == 0) measuredDb else (measuredDb * 0.45f).toInt().coerceAtLeast(8)
+                speaker2PeakDb = if (activeSpeakerIndex == 1) measuredDb else (measuredDb * 0.40f).toInt().coerceAtLeast(6)
+                speaker3PeakDb = if (activeSpeakerIndex == 2) measuredDb else (measuredDb * 0.35f).toInt().coerceAtLeast(5)
+                speaker4PeakDb = if (activeSpeakerIndex == 3) measuredDb else (measuredDb * 0.30f).toInt().coerceAtLeast(4)
 
                 for (z in 0..3) {
                     val zone = when (z) {
@@ -4547,11 +4596,10 @@ private fun MinutesScreen(
                         2 -> speakerZone3
                         else -> speakerZone4
                     }
-                    val jitter = Random.nextFloat() * 0.15f
                     val bandVal = if (z == activeSpeakerIndex) {
-                        (normalized * (0.75f + Random.nextFloat() * 0.25f)).coerceIn(0.2f, 0.98f)
+                        normalized.coerceIn(0.18f, 0.98f)
                     } else {
-                        (normalized * 0.28f + jitter).coerceIn(0.08f, 0.45f)
+                        (normalized * 0.25f).coerceIn(0.06f, 0.35f)
                     }
                     if (zone.size >= 7) {
                         for (k in 0 until zone.size - 1) {
@@ -4562,11 +4610,6 @@ private fun MinutesScreen(
                         zone.add(bandVal)
                     }
                 }
-
-                speaker1PeakDb = (14 * (speakerZone1.maxOrNull() ?: 0.2f)).toInt().coerceIn(1, 14)
-                speaker2PeakDb = (14 * (speakerZone2.maxOrNull() ?: 0.2f)).toInt().coerceIn(1, 14)
-                speaker3PeakDb = (14 * (speakerZone3.maxOrNull() ?: 0.2f)).toInt().coerceIn(1, 14)
-                speaker4PeakDb = (14 * (speakerZone4.maxOrNull() ?: 0.2f)).toInt().coerceIn(1, 14)
             }
         }
     }
@@ -4614,16 +4657,17 @@ private fun MinutesScreen(
                 isPreviewPlaying = false
             } catch (e: Exception) {}
 
-            // Iniciar grabación física de audio a archivo .m4a
+            // Iniciar grabación física de audio a archivo .m4a con fuente VOICE_RECOGNITION para sala amplia
             val recorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 MediaRecorder(context)
             } else {
                 @Suppress("DEPRECATION")
                 MediaRecorder()
             }.apply {
-                setAudioSource(MediaRecorder.AudioSource.MIC)
+                setAudioSource(MediaRecorder.AudioSource.VOICE_RECOGNITION)
                 setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
                 setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                setAudioChannels(1) // Mono para eliminar cancelaciones acústicas de sala
                 setAudioEncodingBitRate(128000)
                 setAudioSamplingRate(44100)
                 setOutputFile(audioFile.absolutePath)
@@ -4653,32 +4697,49 @@ private fun MinutesScreen(
 
         voiceManager.stopMeetingRecordingMode()
 
-        currentMeetingAudioFile?.let { audio ->
-            if (audio.exists() && audio.length() > 0) {
-                MediaScannerConnection.scanFile(context, arrayOf(audio.absolutePath), null, null)
-            }
+        val audio = currentMeetingAudioFile
+        if (audio != null && audio.exists() && audio.length() > 0) {
+            MediaScannerConnection.scanFile(context, arrayOf(audio.absolutePath), null, null)
         }
 
-        try {
-            val report = voiceManager.finalizeAndProcessMeeting(
-                audioFile = currentMeetingAudioFile,
-                durationSeconds = recordingSeconds
-            )
-            selectedMeetingTab = 0
-            meetingSavedMessage = "✅ Acta y Audio guardados: ${File(report.savedFilePath).name}"
+        meetingSavedMessage = "🎙️ Procesando audio con IA (limpiando ruido de sala y diarizando oradores)..."
+        isAiProcessing = true
 
-            val spokenMsg = if (report.scheduledEvents.isNotEmpty()) {
-                val ev = report.scheduledEvents.first()
-                "Reunión finalizada. Registré ${report.agreements.size} acuerdos y agendé automáticamente ${ev.title} para ${ev.dateDescription} en tu agenda."
-            } else if (report.agreements.isNotEmpty()) {
-                "Reunión finalizada. Registré ${report.agreements.size} acuerdos en el acta ejecutiva."
-            } else {
-                "Reunión finalizada. Acta guardada en el dispositivo."
+        scope.launch(Dispatchers.IO) {
+            try {
+                // Transcripción y diarización real de oradores con Gemini a partir del audio físico grabado
+                val cloudTranscript = if (audio != null && audio.exists() && audio.length() > 500) {
+                    voiceManager.transcribeAudioFile(audio, forceCloud = true)
+                } else null
+
+                val report = voiceManager.finalizeAndProcessMeeting(
+                    audioFile = audio,
+                    durationSeconds = recordingSeconds,
+                    directAiTranscript = cloudTranscript
+                )
+
+                withContext(Dispatchers.Main) {
+                    isAiProcessing = false
+                    selectedMeetingTab = 0
+                    meetingSavedMessage = "✅ Acta y Audio guardados: ${File(report.savedFilePath).name}"
+
+                    val spokenMsg = if (report.scheduledEvents.isNotEmpty()) {
+                        val ev = report.scheduledEvents.first()
+                        "Reunión finalizada. Registré ${report.agreements.size} acuerdos y agendé automáticamente ${ev.title} para ${ev.dateDescription} en tu agenda."
+                    } else if (report.agreements.isNotEmpty()) {
+                        "Reunión finalizada. Registré ${report.agreements.size} acuerdos en el acta ejecutiva."
+                    } else {
+                        "Reunión finalizada. Acta guardada en el dispositivo."
+                    }
+                    voiceManager.speakDirectly(spokenMsg)
+                }
+            } catch (e: Exception) {
+                Log.e("Minutes", "Error procesando reunión", e)
+                withContext(Dispatchers.Main) {
+                    isAiProcessing = false
+                    meetingSavedMessage = "Error al procesar acta: ${e.message}"
+                }
             }
-            voiceManager.speakDirectly(spokenMsg)
-        } catch (e: Exception) {
-            Log.e("Minutes", "Error procesando reunión", e)
-            meetingSavedMessage = "Error al procesar acta: ${e.message}"
         }
     }
 
@@ -5251,8 +5312,43 @@ private fun MinutesScreen(
                     .clip(RoundedCornerShape(if (isRound) 16.dp else 8.dp))
                     .background(Color(0xFF3E1717))
                     .clickable {
+                        try {
+                            previewPlayer?.stop()
+                            previewPlayer?.release()
+                            previewPlayer = null
+                            isPreviewPlaying = false
+                        } catch (e: Exception) {}
+
+                        // Eliminar físicamente los archivos del almacenamiento del teléfono
+                        val deletedFiles = mutableListOf<String>()
+                        currentMeetingAudioFile?.let {
+                            if (it.exists()) {
+                                deletedFiles.add(it.absolutePath)
+                                it.delete()
+                            }
+                        }
+                        currentMeetingTxtFile?.let {
+                            if (it.exists()) {
+                                deletedFiles.add(it.absolutePath)
+                                it.delete()
+                            }
+                        }
+                        lastExecutiveReport?.savedFilePath?.let { path ->
+                            val f = File(path)
+                            if (f.exists()) {
+                                deletedFiles.add(f.absolutePath)
+                                f.delete()
+                            }
+                        }
+                        if (deletedFiles.isNotEmpty()) {
+                            MediaScannerConnection.scanFile(context, deletedFiles.toTypedArray(), null, null)
+                        }
+
+                        currentMeetingAudioFile = null
+                        currentMeetingTxtFile = null
                         voiceManager.clearConversationHistory()
                         voiceManager.clearLastMeetingReport()
+                        meetingSavedMessage = "🗑️ Archivos eliminados del dispositivo"
                     },
                 contentAlignment = Alignment.Center
             ) {

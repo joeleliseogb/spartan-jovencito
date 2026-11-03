@@ -129,9 +129,18 @@ class JarvisVoiceManager(private val context: Context) : TextToSpeech.OnInitList
     private val _lastMeetingReport = MutableStateFlow<com.example.jarvis.meeting.ExecutiveMeetingReport?>(null)
     val lastMeetingReport = _lastMeetingReport.asStateFlow()
 
-    fun finalizeAndProcessMeeting(audioFile: File? = null, durationSeconds: Long = 0L): com.example.jarvis.meeting.ExecutiveMeetingReport {
+    fun finalizeAndProcessMeeting(
+        audioFile: File? = null,
+        durationSeconds: Long = 0L,
+        directAiTranscript: String? = null
+    ): com.example.jarvis.meeting.ExecutiveMeetingReport {
         val currentHistory = _conversationHistoryList.value
-        val report = meetingEngine.processMeeting(currentHistory, audioFile, durationSeconds)
+        val report = meetingEngine.processMeeting(
+            history = currentHistory,
+            associatedAudioFile = audioFile,
+            durationSeconds = durationSeconds,
+            directAiTranscript = directAiTranscript
+        )
         _lastMeetingReport.value = report
         return report
     }
@@ -1868,13 +1877,13 @@ class JarvisVoiceManager(private val context: Context) : TextToSpeech.OnInitList
      * Transcribe un archivo de audio grabado (.m4a / .mp3 / .wav) utilizando la IA multimodal de Gemini.
      * Identifica los interlocutores (niñas, jóvenes, mujeres, hombres) y extrae los puntos y acuerdos clave.
      */
-    suspend fun transcribeAudioFile(file: File): String = withContext(Dispatchers.IO) {
+    suspend fun transcribeAudioFile(file: File, forceCloud: Boolean = false): String = withContext(Dispatchers.IO) {
         try {
             if (!file.exists() || file.length() == 0L) {
                 return@withContext "El archivo de audio está vacío o no se encontró."
             }
 
-            // 1. Verificar si ya existe un acta o transcripción local (.txt) asociada
+            // 1. Verificar si ya existe un acta o transcripción local (.txt) asociada si no se fuerza la nube
             val companionTxtFiles = listOfNotNull(
                 File(file.parentFile, "${file.nameWithoutExtension}.txt"),
                 File(file.parentFile, "Acta_${file.nameWithoutExtension}.txt"),
@@ -1886,8 +1895,11 @@ class JarvisVoiceManager(private val context: Context) : TextToSpeech.OnInitList
                 File(android.os.Environment.getExternalStoragePublicDirectory("Recordings"), "JOWELL/Reuniones/Acta_${file.nameWithoutExtension.removePrefix("reunion_")}.txt")
             )
             val existingLocalText = companionTxtFiles.firstOrNull { it.exists() && it.length() > 5 }?.readText()?.trim()
+            if (!forceCloud && !existingLocalText.isNullOrBlank() && !existingLocalText.contains("[No se registraron intervenciones")) {
+                return@withContext existingLocalText
+            }
 
-            // 2. Intentar transcripción con IA en la nube si hay API Key configurada
+            // 2. Transcripción con IA en la nube (filtrado acústico y diarización para salas grandes)
             val effectiveKey = getEffectiveApiKey()
             var cloudText: String? = null
             var lastHttpCode = 0
@@ -1896,6 +1908,27 @@ class JarvisVoiceManager(private val context: Context) : TextToSpeech.OnInitList
                 val bytes = file.readBytes()
                 val base64Data = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
                 val mimeType = if (file.name.endsWith(".m4a", ignoreCase = true)) "audio/mp4" else "audio/mp4"
+
+                val promptText = """
+Eres el Asistente Ejecutivo del Director Joel en CDPE Guatemala.
+Analiza este audio de reunión comercial grabado en una sala amplia, con reverberación y oradores a cierta distancia del micrófono.
+
+INSTRUCCIONES CLAVE DE PROCESAMIENTO:
+1. LIMPIEZA Y GANANCIA: Filtra la estática, el eco y ruidos de fondo de la sala. Amplifica la comprensión de las voces lejanas.
+2. IDENTIFICACIÓN Y DIARIZACIÓN DE ORADORES:
+   - Identifica con precisión al Director Joel (organizador/líder).
+   - Identifica a los clientes, socios e interlocutores que participan en la conversación.
+3. TRANSCRIPCIÓN FIEL: Transcribe cada intervención indicando quién habla y el contenido exacto de sus palabras.
+4. RESUMEN DE PUNTOS IMPORTANTES: Sintetiza los temas clave discutidos (negociaciones, productos, pedidos, metas).
+5. ACUERDOS Y COMPROMISOS: Enumera uno a uno los acuerdos concretos alcanzados y quién se compromete a cumplirlos.
+6. CITAS Y FECHAS: Identifica cualquier fecha o plazo mencionado para la agenda.
+
+Estructura tu respuesta con encabezados claros:
+📌 1. RESUMEN DE PUNTOS IMPORTANTES
+🤝 2. ACUERDOS Y COMPROMISOS ALCANZADOS
+📅 3. CITAS Y EVENTOS AGENDADOS
+📝 4. TRANSCRIPCIÓN DETALLADA POR INTERLOCUTOR
+""".trimIndent()
 
                 val json = JSONObject().apply {
                     put("contents", JSONArray().apply {
@@ -1909,7 +1942,7 @@ class JarvisVoiceManager(private val context: Context) : TextToSpeech.OnInitList
                                     })
                                 })
                                 put(JSONObject().apply {
-                                    put("text", "Eres el Asistente Ejecutivo del Director Joel en CDPE Guatemala. Analiza este audio de reunión con clientes. Transcribe fielmente separando a los interlocutores (Joel, Clientes, Socios), resume los puntos clave, extrae los acuerdos concretos y detecta fechas o compromisos para agendarlos.")
+                                    put("text", promptText)
                                 })
                             })
                         })

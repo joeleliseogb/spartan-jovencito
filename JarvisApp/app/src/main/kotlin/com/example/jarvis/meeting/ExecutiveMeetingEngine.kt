@@ -93,7 +93,8 @@ class ExecutiveMeetingEngine(
     fun processMeeting(
         history: List<ConversationTurn>,
         associatedAudioFile: File? = null,
-        durationSeconds: Long = 0L
+        durationSeconds: Long = 0L,
+        directAiTranscript: String? = null
     ): ExecutiveMeetingReport {
         val now = Date()
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(now)
@@ -106,10 +107,10 @@ class ExecutiveMeetingEngine(
         // 1. Participantes detectados
         val participants = mutableSetOf<String>()
         participants.add("Joel (Director CDPE)")
-        if (history.any { it.role != "user" }) {
+        if (history.any { it.role != "user" } || (directAiTranscript != null && directAiTranscript.contains("Cliente", ignoreCase = true))) {
             participants.add("Cliente / Interlocutor")
         }
-        if (history.size > 4) {
+        if (history.size > 4 || (directAiTranscript != null && directAiTranscript.contains("Socio", ignoreCase = true))) {
             participants.add("Asamblea / Socios")
         }
 
@@ -117,7 +118,16 @@ class ExecutiveMeetingEngine(
         val sbTranscription = StringBuilder()
         val substantiveSentences = mutableListOf<String>()
 
-        if (history.isEmpty()) {
+        if (!directAiTranscript.isNullOrBlank()) {
+            sbTranscription.appendLine(directAiTranscript.trim())
+            // Extraer líneas sustantivas para análisis
+            directAiTranscript.lines().forEach { line ->
+                val trimmed = line.trim()
+                if (trimmed.length > 8 && !trimmed.startsWith("===") && !trimmed.startsWith("---") && !isTrivialGreeting(trimmed)) {
+                    substantiveSentences.add(trimmed)
+                }
+            }
+        } else if (history.isEmpty()) {
             sbTranscription.appendLine("[No se registraron intervenciones habladas durante la sesión]")
         } else {
             history.forEachIndexed { idx, turn ->
