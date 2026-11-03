@@ -1910,21 +1910,30 @@ class JarvisVoiceManager(private val context: Context) : TextToSpeech.OnInitList
                 val mimeType = if (file.name.endsWith(".m4a", ignoreCase = true)) "audio/mp4" else "audio/mp4"
 
                 val promptText = """
-Eres el Asistente Ejecutivo del Director Joel en CDPE Guatemala.
-Analiza este audio de reunión grabado en una sala amplia con personas a distancia del micrófono y volumen bajo (alrededor de -37 dB).
+Eres el transcriptor y asistente del Director Joel (CDPE Guatemala).
+Analiza este audio con absoluta fidelidad y sentido común:
 
-INSTRUCCIONES OBLIGATORIAS DE PROCESAMIENTO:
-1. MÁXIMA SENSIBILIDAD ACÚSTICA (+20 dB): Las voces son tenues y lejanas con ruido de fondo o estática. Amplifica mentalmente las voces y extrae todo lo que dicen en español. NO devuelvas <noise>.
-2. DIARIZACIÓN DE ORADORES: Identifica a cada persona que interviene en la conversación (Director Joel, Clientes, Brenda / Interlocutores).
-3. TRANSCRIPCIÓN DETALLADA: Escribe textualmente cada frase que se pronuncia en la sala.
-4. RESUMEN: Sintetiza los temas tratados y decisiones tomadas.
-5. ACUERDOS Y CITAS: Extrae compromisos, labores, horarios y plazos mencionados para la agenda.
+REGLAS DE ORO:
+1. CERO INVENTOS NI EXAGERACIONES: Sé natural, directo y fiel a lo que realmente ocurre.
+   - Si el audio es una plática cotidiana, doméstica o una interacción con niños/familia, indícalo de manera sencilla y clara.
+   - NUNCA inventes explicaciones corporativas absurdas ni protocolos de negocio ficticios para frases casuales o domésticas.
+   - Si el audio es muy corto o solo contiene llamados de atención o saludos, descríbelo tal cual, sin adornos ni justificaciones.
+2. ACUERDOS REALES: Solo registra acuerdos si los interlocutores pactan un compromiso real y explícito en el audio. Si no hay acuerdos, escribe: "Sin acuerdos en este fragmento".
+3. CITAS Y CALENDARIO: Solo registra citas si los interlocutores acuerdan expresamente verse un día, fecha u hora específica. Si no hay fechas explícitas, escribe: "Sin citas ni eventos mencionados".
+4. DIARIZACIÓN FIEL: Transcribe exactamente las frases habladas indicando el orador.
 
-Estructura tu respuesta exactamente así:
-📌 1. RESUMEN DE PUNTOS IMPORTANTES
-🤝 2. ACUERDOS Y COMPROMISOS ALCANZADOS
-📅 3. CITAS Y EVENTOS AGENDADOS
-📝 4. TRANSCRIPCIÓN DETALLADA POR INTERLOCUTOR
+Estructura tu respuesta exactamente así, sin saludos ni introducciones:
+📌 RESUMEN
+(1 a 3 viñetas breves y realistas con lo que realmente ocurrió)
+
+🤝 ACUERDOS
+(Los compromisos reales, o "Sin acuerdos en este fragmento")
+
+📅 CITAS
+(Las fechas acordadas con día/hora, o "Sin citas ni eventos mencionados")
+
+📝 TRANSCRIPCIÓN
+(Diálogo exacto palabra por palabra de los interlocutores)
 """.trimIndent()
 
                 val json = JSONObject().apply {
@@ -1971,16 +1980,6 @@ Estructura tu respuesta exactamente así:
                             android.media.MediaScannerConnection.scanFile(context, arrayOf(cacheTxt.absolutePath), null, null)
                         } catch (e: Exception) {}
 
-                        // Auto-agendamiento si se mencionan fechas
-                        try {
-                            deviceAssistantManager.addDirectAgendaEvent(
-                                title = "Reunión de seguimiento: ${file.nameWithoutExtension}",
-                                timeFormatted = "10:00 AM",
-                                dateMillis = System.currentTimeMillis() + 86400000L * 2,
-                                description = "Compromisos derivados de audio ${file.name}"
-                            )
-                        } catch (e: Exception) {}
-
                         return@withContext cloudText
                     }
                 }
@@ -2004,16 +2003,6 @@ Estructura tu respuesta exactamente así:
 
             val durStr = String.format(Locale.US, "%02d:%02d min", durationSec / 60, durationSec % 60)
             val sizeMb = String.format(Locale.US, "%.1f MB", file.length() / (1024.0 * 1024.0))
-
-            // Auto-agendar tarea de seguimiento comercial
-            try {
-                deviceAssistantManager.addDirectAgendaEvent(
-                    title = "Seguimiento de Audio: ${file.nameWithoutExtension}",
-                    timeFormatted = "10:00 AM",
-                    dateMillis = System.currentTimeMillis() + 86400000L,
-                    description = "Revisión de acuerdos de la grabación ${file.name}"
-                )
-            } catch (e: Exception) {}
 
             return@withContext """
                 🎙️ ANÁLISIS EJECUTIVO DE CONVERSACIÓN CDPE

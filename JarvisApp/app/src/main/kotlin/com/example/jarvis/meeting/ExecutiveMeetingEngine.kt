@@ -178,13 +178,29 @@ class ExecutiveMeetingEngine(
         }
 
         // 3. Puntos Importantes
-        val keyPoints = if (parsedKeyPoints.isNotEmpty()) parsedKeyPoints else extractKeyPoints(substantiveSentences)
+        val keyPoints = if (parsedKeyPoints.isNotEmpty()) {
+            parsedKeyPoints
+        } else {
+            extractKeyPoints(substantiveSentences)
+        }
 
-        // 4. Acuerdos y Compromisos
-        val agreements = if (parsedAgreements.isNotEmpty()) parsedAgreements else extractAgreements(substantiveSentences)
+        // 4. Acuerdos y Compromisos (sin inyecciones de acuerdos falsos si no los hubo)
+        val agreements = if (parsedAgreements.isNotEmpty()) {
+            parsedAgreements.filter { !it.contains("Sin acuerdos", ignoreCase = true) && !it.contains("No se registraron", ignoreCase = true) }
+        } else {
+            extractAgreements(substantiveSentences)
+        }
 
-        // 5. Citas y Eventos
-        val scheduledEvents = extractAndScheduleEvents(substantiveSentences, now)
+        // 5. Citas y Eventos (estrictamente solo si hubo fechas explícitas acordadas)
+        val scheduledEvents = if (!directAiTranscript.isNullOrBlank()) {
+            if (directAiTranscript.contains("Sin citas", ignoreCase = true) || directAiTranscript.contains("No se mencionaron fechas", ignoreCase = true)) {
+                emptyList()
+            } else {
+                extractAndScheduleEvents(substantiveSentences, now)
+            }
+        } else {
+            extractAndScheduleEvents(substantiveSentences, now)
+        }
 
         // 6. Redacción del Acta Ejecutiva Completa
         val actaContent = if (!directAiTranscript.isNullOrBlank()) {
@@ -353,15 +369,22 @@ class ExecutiveMeetingEngine(
 
         for (s in sentences) {
             val lower = s.lowercase(Locale("es"))
+            // Ignorar oraciones que niegan citas o son explicaciones/metadatos
+            if (lower.contains("no se mencion") || lower.contains("sin citas") || lower.contains("no se registr") || lower.contains("no hay") || lower.contains("ningún")) {
+                continue
+            }
+
             val hasMeetingIntent = lower.contains("reuni") || lower.contains("vernos") ||
                     lower.contains("nos vemos") || lower.contains("llamada") ||
                     lower.contains("cita") || lower.contains("entrega") ||
                     lower.contains("junta") || lower.contains("agend")
 
-            if (hasMeetingIntent || lower.contains("el próximo") || lower.contains("el proximo") || lower.contains("mañana")) {
+            val hasDateKeyword = lower.contains("el próximo") || lower.contains("el proximo") || lower.contains("mañana") || lower.contains("manana") || daysOfWeek.keys.any { lower.contains(it) }
+
+            if (hasMeetingIntent && hasDateKeyword) {
                 var cal = Calendar.getInstance().apply { time = baseDate }
                 var dateFound = false
-                var dateDesc = "Próxima fecha"
+                var dateDesc = ""
                 var timeDesc = "10:00 AM"
 
                 // Detección de "mañana" / "pasado mañana"
@@ -403,13 +426,12 @@ class ExecutiveMeetingEngine(
                     cal.set(Calendar.SECOND, 0)
                     timeDesc = String.format(Locale.US, "%02d:%02d", h, m)
                 } else {
-                    // Por defecto a las 10:00 AM si no se especificó hora
                     cal.set(Calendar.HOUR_OF_DAY, 10)
                     cal.set(Calendar.MINUTE, 0)
                     cal.set(Calendar.SECOND, 0)
                 }
 
-                if (dateFound || hasMeetingIntent) {
+                if (dateFound && dateDesc.isNotBlank()) {
                     val title = deriveMeetingTitle(s)
                     val eventItem = ScheduledMeetingItem(
                         title = title,
