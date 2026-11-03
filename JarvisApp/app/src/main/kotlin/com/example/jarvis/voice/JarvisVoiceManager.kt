@@ -359,6 +359,7 @@ class JarvisVoiceManager(private val context: Context) : TextToSpeech.OnInitList
             speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
                 setRecognitionListener(object : RecognitionListener {
                     override fun onReadyForSpeech(params: Bundle?) {
+                        if (_isMeetingModeActive.value) return
                         if (_voiceState.value != VoiceState.SPEAKING && _voiceState.value != VoiceState.PROCESSING) {
                             _voiceState.value = VoiceState.LISTENING
                             if (speechBuffer.isEmpty()) {
@@ -368,6 +369,7 @@ class JarvisVoiceManager(private val context: Context) : TextToSpeech.OnInitList
                     }
 
                     override fun onBeginningOfSpeech() {
+                        if (_isMeetingModeActive.value) return
                         // Alguien empezó a hablar: cancelar inmediatamente cualquier temporizador de silencio pendiente
                         silenceJob?.cancel()
                         silenceJob = null
@@ -380,6 +382,7 @@ class JarvisVoiceManager(private val context: Context) : TextToSpeech.OnInitList
                     override fun onBufferReceived(buffer: ByteArray?) {}
 
                     override fun onEndOfSpeech() {
+                        if (_isMeetingModeActive.value) return
                         // El orador hizo una pausa temporal en su frase
                     }
 
@@ -514,8 +517,18 @@ class JarvisVoiceManager(private val context: Context) : TextToSpeech.OnInitList
             speechBuffer.clear()
             _voiceState.value = VoiceState.LISTENING
             _liveTranscript.value = "🔴 Grabando reunión continua (Silencio absoluto: sin pitidos ni interrupciones)..."
+            
             // Desactivar SpeechRecognizer para eliminar por completo los 'beeps' de detección de voz de Android
             stopListeningInternal()
+
+            // Silenciar flujos del sistema y notificaciones para garantizar cero dings de campana
+            try {
+                val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                    am?.adjustStreamVolume(AudioManager.STREAM_NOTIFICATION, AudioManager.ADJUST_MUTE, 0)
+                    am?.adjustStreamVolume(AudioManager.STREAM_SYSTEM, AudioManager.ADJUST_MUTE, 0)
+                }
+            } catch (e: Exception) {}
         } catch (e: Throwable) {
             Log.e("JarvisVoiceManager", "Error al iniciar modo reunion silenciosa", e)
         }
@@ -529,6 +542,15 @@ class JarvisVoiceManager(private val context: Context) : TextToSpeech.OnInitList
         textToSpeech?.stop()
         _voiceState.value = VoiceState.IDLE
         _liveTranscript.value = "Reunión finalizada. Procesando acta..."
+
+        // Restaurar volumen del sistema y notificaciones
+        try {
+            val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                am?.adjustStreamVolume(AudioManager.STREAM_NOTIFICATION, AudioManager.ADJUST_UNMUTE, 0)
+                am?.adjustStreamVolume(AudioManager.STREAM_SYSTEM, AudioManager.ADJUST_UNMUTE, 0)
+            }
+        } catch (e: Exception) {}
     }
 
     fun stopConversationMode() {

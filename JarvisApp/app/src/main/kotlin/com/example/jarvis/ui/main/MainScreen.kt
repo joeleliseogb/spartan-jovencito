@@ -4550,6 +4550,11 @@ private fun MinutesScreen(
     val powerManager = remember { context.getSystemService(Context.POWER_SERVICE) as? PowerManager }
     var wakeLock by remember { mutableStateOf<PowerManager.WakeLock?>(null) }
 
+    LaunchedEffect(Unit) {
+        // Al entrar a Actas y Minutas, apagar de inmediato el escuchador conversacional para evitar cualquier ding de Android
+        voiceManager.stopConversationMode()
+    }
+
     DisposableEffect(Unit) {
         onDispose {
             try {
