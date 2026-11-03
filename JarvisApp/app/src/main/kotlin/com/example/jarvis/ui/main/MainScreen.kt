@@ -2909,7 +2909,7 @@ private fun RecorderScreen(voiceManager: JarvisVoiceManager, isRound: Boolean = 
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF90A4AE)
                 )
-                recordingsList.take(5).forEach { audioFile ->
+                recordingsList.take(30).forEach { audioFile ->
                     val isThisActive = currentFile?.name == audioFile.name && isPlaying
                     Row(
                         modifier = Modifier
@@ -2942,7 +2942,7 @@ private fun RecorderScreen(voiceManager: JarvisVoiceManager, isRound: Boolean = 
                         }
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Text(
                                 text = if (isThisActive) "❚❚" else "▶",
@@ -2950,6 +2950,25 @@ private fun RecorderScreen(voiceManager: JarvisVoiceManager, isRound: Boolean = 
                                 color = if (isThisActive) Color(0xFF00E5FF) else Color(0xFFB0BEC5),
                                 modifier = Modifier.clickable { playAudioFile(audioFile) }
                             )
+                            // Botón de transcripción rápida con IA directa para esta reunión
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(Color(0xFF0D47A1))
+                                    .clickable {
+                                        currentFile = audioFile
+                                        transcribeCurrentRecording()
+                                    }
+                                    .padding(horizontal = 6.dp, vertical = 3.dp)
+                            ) {
+                                Text(
+                                    text = "🔄 IA",
+                                    fontSize = 10.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF00E5FF)
+                                )
+                            }
                             Box(
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(4.dp))
@@ -4572,6 +4591,7 @@ private fun MinutesScreen(
     var availableAudios by remember { mutableStateOf(getMeetingAndRecorderAudios()) }
     var audioSelectIndex by remember { mutableIntStateOf(0) }
     var participantsInput by remember { mutableStateOf("") }
+    var showAudioPicker by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         // Al entrar a Actas y Minutas, apagar de inmediato el escuchador conversacional para evitar cualquier ding de Android
@@ -4974,19 +4994,12 @@ private fun MinutesScreen(
                     )
                     if (availableAudios.size > 1) {
                         Text(
-                            text = "Toca para alternar (${audioSelectIndex + 1}/${availableAudios.size})",
-                            fontSize = 7.5.sp,
+                            text = "📂 Ver todas las grabaciones (${availableAudios.size})",
+                            fontSize = 8.sp,
                             fontFamily = FontFamily.Monospace,
-                            color = Color(0xFF80CBC4),
-                            modifier = Modifier.clickable {
-                                audioSelectIndex = (audioSelectIndex + 1) % availableAudios.size
-                                val nextAudio = availableAudios[audioSelectIndex]
-                                currentMeetingAudioFile = nextAudio
-                                meetingSavedMessage = "Audio CDPE: ${nextAudio.name}"
-                                previewPlayer?.release()
-                                previewPlayer = null
-                                isPreviewPlaying = false
-                            }
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF00E5FF),
+                            modifier = Modifier.clickable { showAudioPicker = true }
                         )
                     }
                 }
@@ -5047,6 +5060,96 @@ private fun MinutesScreen(
                             fontWeight = FontWeight.Bold,
                             color = Color.Black
                         )
+                    }
+                }
+            }
+        }
+
+        // Diálogo para Elegir Cuál Reunión Analizar con la IA
+        if (showAudioPicker) {
+            Dialog(onDismissRequest = { showAudioPicker = false }) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(0.95f)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFF10131A))
+                        .border(1.5.dp, Color(0xFF00E5FF), RoundedCornerShape(12.dp))
+                        .padding(14.dp)
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            text = "SELECCIONAR REUNIÓN PARA EL ACTA",
+                            fontSize = 12.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Black,
+                            color = Color(0xFF00E5FF)
+                        )
+                        Text(
+                            text = "Toca la grabación que deseas analizar y transcribir con IA:",
+                            fontSize = 10.sp,
+                            color = Color(0xFFB0BEC5)
+                        )
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 280.dp)
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            availableAudios.forEachIndexed { idx, audioFile ->
+                                val isSelected = currentMeetingAudioFile?.absolutePath == audioFile.absolutePath
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(if (isSelected) Color(0xFF1A3344) else Color(0xFF181C26))
+                                        .border(1.dp, if (isSelected) Color(0xFF00E5FF) else Color(0xFF262C3D), RoundedCornerShape(6.dp))
+                                        .clickable {
+                                            audioSelectIndex = idx
+                                            currentMeetingAudioFile = audioFile
+                                            meetingSavedMessage = "Audio seleccionado: ${audioFile.name}"
+                                            previewPlayer?.release()
+                                            previewPlayer = null
+                                            isPreviewPlaying = false
+                                            showAudioPicker = false
+                                        }
+                                        .padding(8.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = audioFile.name,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = if (isSelected) Color(0xFF00E5FF) else Color.White
+                                        )
+                                        val kb = audioFile.length() / 1024
+                                        val sizeStr = if (kb > 1024) String.format(Locale.US, "%.1f MB", kb / 1024f) else "$kb KB"
+                                        Text(
+                                            text = "$sizeStr · ${SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(audioFile.lastModified()))}",
+                                            fontSize = 9.sp,
+                                            color = Color(0xFF90A4AE)
+                                        )
+                                    }
+                                    if (isSelected) {
+                                        Text(text = "ACTIVA ✓", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF00E676))
+                                    }
+                                }
+                            }
+                        }
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(0xFF263238))
+                                .clickable { showAudioPicker = false }
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(text = "CERRAR", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        }
                     }
                 }
             }
