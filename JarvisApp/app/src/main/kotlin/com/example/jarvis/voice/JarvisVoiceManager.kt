@@ -132,16 +132,14 @@ class JarvisVoiceManager(private val context: Context) : TextToSpeech.OnInitList
     fun finalizeAndProcessMeeting(
         audioFile: File? = null,
         durationSeconds: Long = 0L,
-        directAiTranscript: String? = null,
-        customParticipants: List<String> = emptyList()
+        directAiTranscript: String? = null
     ): com.example.jarvis.meeting.ExecutiveMeetingReport {
         val currentHistory = _conversationHistoryList.value
         val report = meetingEngine.processMeeting(
             history = currentHistory,
             associatedAudioFile = audioFile,
             durationSeconds = durationSeconds,
-            directAiTranscript = directAiTranscript,
-            customParticipants = customParticipants
+            directAiTranscript = directAiTranscript
         )
         _lastMeetingReport.value = report
         return report
@@ -1894,9 +1892,9 @@ class JarvisVoiceManager(private val context: Context) : TextToSpeech.OnInitList
 
     /**
      * Transcribe un archivo de audio grabado (.m4a / .mp3 / .wav) utilizando la IA multimodal de Gemini.
-     * Identifica los interlocutores con nombres provistos o roles reales y extrae los puntos y acuerdos clave.
+     * Identifica los interlocutores con roles reales y extrae los puntos y acuerdos clave.
      */
-    suspend fun transcribeAudioFile(file: File, forceCloud: Boolean = false, participantsHint: String? = null): String = withContext(Dispatchers.IO) {
+    suspend fun transcribeAudioFile(file: File, forceCloud: Boolean = false): String = withContext(Dispatchers.IO) {
         try {
             if (!file.exists() || file.length() == 0L) {
                 return@withContext "El archivo de audio está vacío o no se encontró."
@@ -1928,12 +1926,6 @@ class JarvisVoiceManager(private val context: Context) : TextToSpeech.OnInitList
                 val base64Data = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
                 val mimeType = if (file.name.endsWith(".m4a", ignoreCase = true)) "audio/mp4" else "audio/mp4"
 
-                val diarizationRule = if (!participantsHint.isNullOrBlank()) {
-                    "3. DIARIZACIÓN CON PARTICIPANTES IDENTIFICADOS:\nLos asistentes confirmados a la reunión son: $participantsHint.\nAsigna con precisión cada intervención al nombre y rol correspondiente de acuerdo a sus voces e intervenciones (usa únicamente 'Director' para el líder de la reunión, nunca menciones su nombre personal)."
-                } else {
-                    "3. DIARIZACIÓN PRECISA: Separa y distingue claramente a los oradores por sus timbres de voz (identifica al líder de la reunión únicamente como 'Director', nunca menciones su nombre personal, y a los demás como 'Cliente', 'Socio', etc.)."
-                }
-
                 val promptText = """
 Eres el transcriptor y asistente de confianza del Director (CDPE Guatemala).
 Analiza este archivo de audio grabado en sala real con absoluta precisión acústica y fidelidad:
@@ -1941,7 +1933,7 @@ Analiza este archivo de audio grabado en sala real con absoluta precisión acús
 TRATAMIENTO ACÚSTICO Y RESTAURACIÓN DE AUDIO (MÁXIMA CALIDAD):
 1. CANCELACIÓN DE RUIDO Y ESTÁTICA: La grabación contiene ruido de fondo de sala, reverberación, eco y estática ambiental. Filtra y anula frecuencias parásitas (zumbidos, soplos y ruidos de mesa); no dejes que la estática oculte las palabras habladas.
 2. GANANCIA Y AMPLIFICACIÓN (+20 dB): Los oradores pueden encontrarse a cierta distancia del teléfono con voz baja. Aplica máxima sensibilidad para realzar la banda vocal (300 Hz - 3400 Hz) y entender con total claridad lo que dicen en español.
-$diarizationRule
+3. DIARIZACIÓN PRECISA: Separa y distingue claramente a los oradores por sus timbres de voz (identifica al líder de la reunión únicamente como "Director", nunca menciones su nombre personal, y a los demás como "Cliente", "Socio", "Interlocutor", etc.).
 4. TRANSCRIPCIÓN LITERAL LIMPIA: Escribe palabra por palabra lo que realmente dijeron, eliminando ruidos parásitos o sonidos del ambiente.
 
 REGLAS DE ORO:

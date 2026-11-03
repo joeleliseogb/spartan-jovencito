@@ -4590,7 +4590,6 @@ private fun MinutesScreen(
 
     var availableAudios by remember { mutableStateOf(getMeetingAndRecorderAudios()) }
     var audioSelectIndex by remember { mutableIntStateOf(0) }
-    var participantsInput by remember { mutableStateOf("") }
     var showAudioPicker by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -4797,16 +4796,14 @@ private fun MinutesScreen(
         scope.launch(Dispatchers.IO) {
             try {
                 // Transcripción y diarización real de oradores con Gemini a partir del audio físico grabado
-                val parsedParticipants = participantsInput.split(",", ";").map { it.trim() }.filter { it.isNotBlank() }
                 val cloudTranscript = if (audio != null && audio.exists() && audio.length() > 500) {
-                    voiceManager.transcribeAudioFile(audio, forceCloud = true, participantsHint = participantsInput.trim().ifEmpty { null })
+                    voiceManager.transcribeAudioFile(audio, forceCloud = true)
                 } else null
 
                 val report = voiceManager.finalizeAndProcessMeeting(
                     audioFile = audio,
                     durationSeconds = recordingSeconds,
-                    directAiTranscript = cloudTranscript,
-                    customParticipants = parsedParticipants
+                    directAiTranscript = cloudTranscript
                 )
 
                 withContext(Dispatchers.Main) {
@@ -4842,13 +4839,11 @@ private fun MinutesScreen(
 
         scope.launch(Dispatchers.IO) {
             try {
-                val parsedParticipants = participantsInput.split(",", ";").map { it.trim() }.filter { it.isNotBlank() }
-                val cloudTranscript = voiceManager.transcribeAudioFile(audio, forceCloud = true, participantsHint = participantsInput.trim().ifEmpty { null })
+                val cloudTranscript = voiceManager.transcribeAudioFile(audio, forceCloud = true)
                 val report = voiceManager.finalizeAndProcessMeeting(
                     audioFile = audio,
                     durationSeconds = recordingSeconds,
-                    directAiTranscript = cloudTranscript,
-                    customParticipants = parsedParticipants
+                    directAiTranscript = cloudTranscript
                 )
                 withContext(Dispatchers.Main) {
                     isAiProcessing = false
@@ -4953,23 +4948,6 @@ private fun MinutesScreen(
             speaker2PeakDb = speaker2PeakDb,
             speaker3PeakDb = speaker3PeakDb,
             speaker4PeakDb = speaker4PeakDb
-        )
-
-        // Campo de Asistentes / Oradores para Diarización con IA
-        OutlinedTextField(
-            value = participantsInput,
-            onValueChange = { participantsInput = it },
-            placeholder = { Text("👥 Asistentes: ej. Joel (Dir), Carlos (Cliente)...", color = Color(0xFF607286), fontSize = 10.sp) },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedTextColor = Color.White,
-                unfocusedTextColor = Color.White,
-                focusedBorderColor = Color(0xFF00E5FF),
-                unfocusedBorderColor = Color(0xFF263238),
-                focusedContainerColor = Color(0xFF10141D),
-                unfocusedContainerColor = Color(0xFF0D1017)
-            )
         )
 
         // Acceso Rápido al Reproductor y Procesamiento con IA de Grabaciones Disponibles

@@ -94,8 +94,7 @@ class ExecutiveMeetingEngine(
         history: List<ConversationTurn>,
         associatedAudioFile: File? = null,
         durationSeconds: Long = 0L,
-        directAiTranscript: String? = null,
-        customParticipants: List<String> = emptyList()
+        directAiTranscript: String? = null
     ): ExecutiveMeetingReport {
         val now = Date()
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(now)
@@ -107,16 +106,12 @@ class ExecutiveMeetingEngine(
 
         // 1. Participantes detectados
         val participants = mutableSetOf<String>()
-        if (customParticipants.isNotEmpty()) {
-            participants.addAll(customParticipants)
-        } else {
-            participants.add("Director (CDPE)")
-            if (history.any { it.role != "user" } || (directAiTranscript != null && directAiTranscript.contains("Cliente", ignoreCase = true))) {
-                participants.add("Cliente / Interlocutor")
-            }
-            if (history.size > 4 || (directAiTranscript != null && directAiTranscript.contains("Socio", ignoreCase = true))) {
-                participants.add("Asamblea / Socios")
-            }
+        participants.add("Director (CDPE)")
+        if (history.any { it.role != "user" } || (directAiTranscript != null && directAiTranscript.contains("Cliente", ignoreCase = true))) {
+            participants.add("Cliente / Interlocutor")
+        }
+        if (history.size > 4 || (directAiTranscript != null && directAiTranscript.contains("Socio", ignoreCase = true))) {
+            participants.add("Asamblea / Socios")
         }
 
         // 2. Transcripción desglosada por interlocutor
