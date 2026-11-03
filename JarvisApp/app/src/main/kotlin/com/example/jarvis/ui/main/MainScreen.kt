@@ -13,6 +13,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.os.PowerManager
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
@@ -4546,6 +4547,17 @@ private fun MinutesScreen(
     val lastExecutiveReport by voiceManager.lastMeetingReport.collectAsState()
     var selectedMeetingTab by remember { mutableIntStateOf(0) }
 
+    val powerManager = remember { context.getSystemService(Context.POWER_SERVICE) as? PowerManager }
+    var wakeLock by remember { mutableStateOf<PowerManager.WakeLock?>(null) }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            try {
+                if (wakeLock?.isHeld == true) wakeLock?.release()
+            } catch (e: Exception) {}
+        }
+    }
+
     val speakerZone1 = remember { mutableStateListOf(*Array(7) { 0.15f }) }
     val speakerZone2 = remember { mutableStateListOf(*Array(7) { 0.12f }) }
     val speakerZone3 = remember { mutableStateListOf(*Array(7) { 0.10f }) }
@@ -4684,6 +4696,15 @@ private fun MinutesScreen(
             mediaRecorder = recorder
             isRecordingAudio = true
 
+            try {
+                wakeLock = powerManager?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "JOWELL:MeetingRecordingWakeLock")?.apply {
+                    setReferenceCounted(false)
+                    acquire(8 * 60 * 60 * 1000L) // Protección de hasta 8 hrs con pantalla bloqueada
+                }
+            } catch (e: Throwable) {
+                Log.w("MinutesScreen", "No se pudo adquirir WakeLock", e)
+            }
+
             // Iniciar transcriptor en modo reunión SILENCIOSO (no habla, no interrumpe a los clientes)
             voiceManager.startMeetingRecordingMode()
         } catch (e: Throwable) {
@@ -4701,6 +4722,13 @@ private fun MinutesScreen(
         }
         mediaRecorder = null
         isRecordingAudio = false
+
+        try {
+            if (wakeLock?.isHeld == true) {
+                wakeLock?.release()
+            }
+        } catch (e: Exception) {}
+        wakeLock = null
 
         voiceManager.stopMeetingRecordingMode()
 
