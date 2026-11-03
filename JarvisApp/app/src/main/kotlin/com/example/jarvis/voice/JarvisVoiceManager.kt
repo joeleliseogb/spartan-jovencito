@@ -459,12 +459,16 @@ class JarvisVoiceManager(private val context: Context) : TextToSpeech.OnInitList
     }
 
     fun startConversationMode() {
-        _isConversationModeActive.value = true
-        textToSpeech?.stop()
-        silenceJob?.cancel()
-        speechBuffer.clear()
-        _liveTranscript.value = "Modo reunión CDPE activo. Te escucho..."
-        startListeningInternal()
+        try {
+            _isConversationModeActive.value = true
+            textToSpeech?.stop()
+            silenceJob?.cancel()
+            speechBuffer.clear()
+            _liveTranscript.value = "Modo reunión CDPE activo. Te escucho..."
+            startListeningInternal()
+        } catch (e: Throwable) {
+            Log.e("JarvisVoiceManager", "Error al iniciar modo conversacion / reunion", e)
+        }
     }
 
     fun stopConversationMode() {

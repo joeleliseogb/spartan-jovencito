@@ -1,7 +1,10 @@
 package com.example.jarvis.ui.main
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.MediaPlayer
@@ -172,8 +175,13 @@ fun MainScreen(
     val availableModes = remember(installedModules) {
         val list = mutableListOf<JarvisMode>()
         list.add(JarvisMode.ROBOT)       // PANTALLA 1: ASISTENTE EN VIVO (EXCLUSIVO ASISTENTE)
-        list.add(JarvisMode.WATCHFACE)   // PANTALLA 2: ESFERA REALISTA NÓRDICA (PROLIJO EN ESPAÑOL)
-        list.add(JarvisMode.STANDBY)     // PANTALLA 3: BRÚJULA, CLIMA Y TELEMETRÍA COMPLETA
+        list.add(JarvisMode.STANDBY)     // PANTALLA 2: BRÚJULA, CLIMA Y TELEMETRÍA COMPLETA
+        if (installedModules.any { it.id == ModuleId.MINUTES && it.isInstalled && it.isEnabled }) {
+            list.add(JarvisMode.MINUTES)
+        }
+        if (installedModules.any { it.id == ModuleId.AGENDA && it.isInstalled && it.isEnabled }) {
+            list.add(JarvisMode.AGENDA)
+        }
         if (installedModules.any { it.id == ModuleId.RECORDER && it.isInstalled && it.isEnabled }) {
             list.add(JarvisMode.RECORDER)
         }
@@ -185,12 +193,6 @@ fun MainScreen(
         }
         if (installedModules.any { it.id == ModuleId.READER && it.isInstalled && it.isEnabled }) {
             list.add(JarvisMode.READER)
-        }
-        if (installedModules.any { it.id == ModuleId.MINUTES && it.isInstalled && it.isEnabled }) {
-            list.add(JarvisMode.MINUTES)
-        }
-        if (installedModules.any { it.id == ModuleId.AGENDA && it.isInstalled && it.isEnabled }) {
-            list.add(JarvisMode.AGENDA)
         }
         list
     }
@@ -576,49 +578,52 @@ private fun IndustrialMechanicalButton(
         contentAlignment = Alignment.Center,
         modifier = modifier
             .size(size.dp)
-            .scale(if (isSessionActive) 0.91f else 1.0f)
-            .shadow(if (isSessionActive) 1.dp else 6.dp, CircleShape)
             .clip(CircleShape)
-            .background(if (isSessionActive) Color(0xFF381005) else Color(0xFF8D2C0D))
-            .padding(if (isSessionActive) 3.5.dp else 3.dp)
+            .background(if (isSessionActive) Color(0xFF4A1808) else Color(0xFF8D2C0D))
+            .border(
+                1.5.dp,
+                if (isSessionActive) Color(0xFFFF5722) else Color(0xFFB83B17),
+                CircleShape
+            )
+            .padding(3.dp)
             .clip(CircleShape)
             .background(
                 if (isSessionActive)
-                    Brush.verticalGradient(listOf(Color(0xFFD84315), Color(0xFFBF360C), Color(0xFF8A2404)))
+                    Brush.verticalGradient(listOf(Color(0xFFFF5722), Color(0xFFD84315), Color(0xFFBF360C)))
                 else
                     Brush.verticalGradient(listOf(Color(0xFFFF7043), Color(0xFFE64A19), Color(0xFFC73E12)))
             )
             .clickable(onClick = onClick)
     ) {
-        // Únicamente el puntito LED blanco puro centrado (sin flechitas ni marcas extra)
+        // Diodo LED blanco puro nítido (sin sombras ni manchas)
         Box(
             contentAlignment = Alignment.Center,
-            modifier = Modifier.size((size * 0.40f).dp)
+            modifier = Modifier.size((size * 0.32f).dp)
         ) {
             if (isSessionActive) {
-                // Halo difuso blanco puro brillante (ON)
+                // Anillo sutil de resplandor blanco
                 Box(
                     modifier = Modifier
-                        .size((size * 0.40f).dp)
+                        .size((size * 0.28f).dp)
                         .clip(CircleShape)
-                        .background(Color.White.copy(alpha = 0.55f * whiteLedGlow))
+                        .background(Color.White.copy(alpha = 0.22f * whiteLedGlow))
                 )
-                // Lente central LED blanca de alto contraste
+                // Lente central LED blanco brillante nítido
                 Box(
                     modifier = Modifier
-                        .size((size * 0.22f).dp)
+                        .size((size * 0.18f).dp)
                         .clip(CircleShape)
                         .background(Color.White)
-                        .border(0.8.dp, Color(0xFFEEEEEE), CircleShape)
+                        .border(0.5.dp, Color.White, CircleShape)
                 )
             } else {
                 // LED apagado: diodo físico blanco ahumado en reposo (OFF)
                 Box(
                     modifier = Modifier
-                        .size((size * 0.20f).dp)
+                        .size((size * 0.16f).dp)
                         .clip(CircleShape)
                         .background(Color(0x35FFFFFF))
-                        .border(0.8.dp, Color(0x40000000), CircleShape)
+                        .border(0.6.dp, Color(0x30FFFFFF), CircleShape)
                 )
             }
         }
@@ -1982,16 +1987,14 @@ private fun RobotLiveScreen(
                 Box(
                     modifier = Modifier
                         .height(34.dp)
-                        .scale(if (isListening) 0.93f else 1.0f)
-                        .shadow(if (isListening) 1.dp else 5.dp, RoundedCornerShape(17.dp))
                         .clip(RoundedCornerShape(17.dp))
                         .background(
                             if (isListening)
-                                Brush.horizontalGradient(listOf(Color(0xFFD84315), Color(0xFFBF360C)))
+                                Brush.horizontalGradient(listOf(Color(0xFFFF5722), Color(0xFFD84315)))
                             else
                                 Brush.horizontalGradient(listOf(Color(0xFFFF7043), Color(0xFFE64A19)))
                         )
-                        .border(1.dp, if (isListening) Color(0xFF381005) else Color(0xFF8D2C0D), RoundedCornerShape(17.dp))
+                        .border(1.2.dp, if (isListening) Color(0xFFFF8A65) else Color(0xFFB83B17), RoundedCornerShape(17.dp))
                         .clickable { onToggleVoice() }
                         .padding(horizontal = 14.dp),
                     contentAlignment = Alignment.Center
@@ -2005,23 +2008,23 @@ private fun RobotLiveScreen(
                             if (isListening) {
                                 Box(
                                     modifier = Modifier
-                                        .size(11.dp)
+                                        .size(9.dp)
                                         .clip(CircleShape)
-                                        .background(Color.White.copy(alpha = 0.5f * roundLedGlow))
+                                        .background(Color.White.copy(alpha = 0.25f * roundLedGlow))
                                 )
                                 Box(
                                     modifier = Modifier
-                                        .size(6.5.dp)
+                                        .size(6.dp)
                                         .clip(CircleShape)
                                         .background(Color.White)
                                 )
                             } else {
                                 Box(
                                     modifier = Modifier
-                                        .size(6.dp)
+                                        .size(5.5.dp)
                                         .clip(CircleShape)
                                         .background(Color(0x35FFFFFF))
-                                        .border(0.6.dp, Color(0x40000000), CircleShape)
+                                        .border(0.6.dp, Color(0x30FFFFFF), CircleShape)
                                 )
                             }
                         }
@@ -2163,64 +2166,68 @@ private fun MultiSpeakerDiarizationVisualizer(
                     drawLine(Color(0xFF1E2838), Offset(sepX, 0f), Offset(sepX, h), strokeWidth = 1.2f)
                 }
 
-                // Curvas de campana espectrales y barras por cada orador
-                val zonesData = listOf(
-                    Triple(speakerZone1, Color(0xFFFF7043), Color(0xFFD84315)),
-                    Triple(speakerZone2, Color(0xFFE91E63), Color(0xFFC2185B)),
-                    Triple(speakerZone3, Color(0xFF9C27B0), Color(0xFF7B1FA2)),
-                    Triple(speakerZone4, Color(0xFF00E5FF), Color(0xFF0288D1))
-                )
-
-                zonesData.forEachIndexed { zIdx, (bars, colTop, colBottom) ->
-                    val startX = zIdx * zoneW
-                    val endX = (zIdx + 1) * zoneW
-                    val isActive = zIdx == activeSpeakerIndex
-                    val maxBar = bars.maxOrNull() ?: 0.15f
-
-                    // Curva de campana suave de fondo (estilo Bassmaker)
-                    val bellPath = Path().apply {
-                        val midX = (startX + endX) / 2f
-                        val peakY = h * (1f - maxBar.coerceIn(0.12f, 0.88f))
-                        moveTo(startX, h - 14.dp.toPx())
-                        quadraticTo(midX, peakY, endX, h - 14.dp.toPx())
-                        close()
-                    }
-                    drawPath(
-                        path = bellPath,
-                        brush = Brush.verticalGradient(
-                            listOf(
-                                colTop.copy(alpha = if (isActive) 0.30f else 0.08f),
-                                Color.Transparent
-                            )
-                        )
+                try {
+                    // Curvas de campana espectrales y barras por cada orador
+                    val zonesData = listOf(
+                        Triple(speakerZone1.toList(), Color(0xFFFF7043), Color(0xFFD84315)),
+                        Triple(speakerZone2.toList(), Color(0xFFE91E63), Color(0xFFC2185B)),
+                        Triple(speakerZone3.toList(), Color(0xFF9C27B0), Color(0xFF7B1FA2)),
+                        Triple(speakerZone4.toList(), Color(0xFF00E5FF), Color(0xFF0288D1))
                     )
 
-                    // 7 Barras Ecualizadas Verticales por Orador (estilo PureMix)
-                    val barCount = bars.size
-                    val pad = zoneW * 0.06f
-                    val usableW = zoneW - (pad * 2f)
-                    val barWidth = usableW / (barCount * 1.35f)
-                    val barSpacing = (usableW - (barWidth * barCount)) / (barCount - 1).coerceAtLeast(1)
+                    zonesData.forEachIndexed { zIdx, (bars, colTop, colBottom) ->
+                        val startX = zIdx * zoneW
+                        val endX = (zIdx + 1) * zoneW
+                        val isActive = zIdx == activeSpeakerIndex
+                        val maxBar = bars.maxOrNull() ?: 0.15f
 
-                    for (i in 0 until barCount) {
-                        val barAmp = bars[i]
-                        val barH = (h * 0.65f * barAmp).coerceAtLeast(3.dp.toPx())
-                        val bx = startX + pad + i * (barWidth + barSpacing)
-                        val by = h - 16.dp.toPx() - barH
-
-                        val barBrush = Brush.verticalGradient(
-                            listOf(
-                                if (isActive) colTop else colTop.copy(alpha = 0.5f),
-                                if (isActive) colBottom else colBottom.copy(alpha = 0.3f)
+                        // Curva de campana suave de fondo (estilo Bassmaker)
+                        val bellPath = Path().apply {
+                            val midX = (startX + endX) / 2f
+                            val peakY = h * (1f - maxBar.coerceIn(0.12f, 0.88f))
+                            moveTo(startX, h - 14.dp.toPx())
+                            quadraticTo(midX, peakY, endX, h - 14.dp.toPx())
+                            close()
+                        }
+                        drawPath(
+                            path = bellPath,
+                            brush = Brush.verticalGradient(
+                                listOf(
+                                    colTop.copy(alpha = if (isActive) 0.30f else 0.08f),
+                                    Color.Transparent
+                                )
                             )
                         )
-                        drawRoundRect(
-                            brush = barBrush,
-                            topLeft = Offset(bx, by),
-                            size = Size(barWidth, barH),
-                            cornerRadius = CornerRadius(2.dp.toPx(), 2.dp.toPx())
-                        )
+
+                        // 7 Barras Ecualizadas Verticales por Orador (estilo PureMix)
+                        val barCount = bars.size.coerceAtLeast(1)
+                        val pad = zoneW * 0.06f
+                        val usableW = (zoneW - (pad * 2f)).coerceAtLeast(10f)
+                        val barWidth = (usableW / (barCount * 1.35f)).coerceAtLeast(2f)
+                        val barSpacing = if (barCount > 1) ((usableW - (barWidth * barCount)) / (barCount - 1)).coerceAtLeast(1f) else 2f
+
+                        for (i in 0 until barCount) {
+                            val barAmp = bars.getOrElse(i) { 0.15f }
+                            val barH = (h * 0.65f * barAmp).coerceAtLeast(3.dp.toPx())
+                            val bx = startX + pad + i * (barWidth + barSpacing)
+                            val by = h - 16.dp.toPx() - barH
+
+                            val barBrush = Brush.verticalGradient(
+                                listOf(
+                                    if (isActive) colTop else colTop.copy(alpha = 0.5f),
+                                    if (isActive) colBottom else colBottom.copy(alpha = 0.3f)
+                                )
+                            )
+                            drawRoundRect(
+                                brush = barBrush,
+                                topLeft = Offset(bx, by),
+                                size = Size(barWidth, barH),
+                                cornerRadius = CornerRadius(2.dp.toPx(), 2.dp.toPx())
+                            )
+                        }
                     }
+                } catch (e: Exception) {
+                    // Protección contra redimensionamiento transitorio
                 }
             }
 
@@ -3593,6 +3600,7 @@ private fun VideoPlayerScreen(isRound: Boolean = false) {
     var videoUri by remember { mutableStateOf<Uri?>(null) }
     var videoTitle by remember { mutableStateOf("Video CDPE Proyectos.mp4") }
     var videoViewInstance by remember { mutableStateOf<VideoView?>(null) }
+    var isFullscreen by remember { mutableStateOf(false) }
 
     // Videos encontrados en la memoria y galería del teléfono
     var deviceVideos by remember { mutableStateOf(scanAllDeviceVideos(context)) }
@@ -3643,6 +3651,89 @@ private fun VideoPlayerScreen(isRound: Boolean = false) {
         }
     }
 
+    if (isFullscreen) {
+        Dialog(
+            onDismissRequest = { isFullscreen = false },
+            properties = androidx.compose.ui.window.DialogProperties(
+                usePlatformDefaultWidth = false,
+                decorFitsSystemWindows = false
+            )
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black),
+                contentAlignment = Alignment.Center
+            ) {
+                if (videoUri != null) {
+                    AndroidView(
+                        modifier = Modifier.fillMaxSize(),
+                        factory = { ctx ->
+                            VideoView(ctx).apply {
+                                try {
+                                    setVideoURI(videoUri)
+                                    setOnErrorListener { _, _, _ -> true }
+                                    setOnPreparedListener { mp ->
+                                        mp.isLooping = true
+                                        start()
+                                    }
+                                    setOnCompletionListener { }
+                                } catch (e: Exception) {}
+                            }
+                        }
+                    )
+                } else {
+                    Text(
+                        text = "No hay video cargado actualmente.\nSelecciona un video de la lista.",
+                        color = Color.White,
+                        fontFamily = FontFamily.Monospace,
+                        textAlign = TextAlign.Center
+                    )
+                }
+
+                // Barra superior flotante con botón para salir
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.TopCenter)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color(0xCC000000), Color.Transparent)
+                            )
+                        )
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = videoTitle.take(28),
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFFE25227))
+                            .border(1.dp, Color.White.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                            .clickable { isFullscreen = false }
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            text = "🗗 SALIR PANTALLA COMPLETA",
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Black,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -3673,7 +3764,23 @@ private fun VideoPlayerScreen(isRound: Boolean = false) {
                     color = Color(0xFF78909C)
                 )
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color(0xFFE25227))
+                        .border(1.dp, Color(0xFFB83B17), RoundedCornerShape(6.dp))
+                        .clickable { isFullscreen = true }
+                        .padding(horizontal = 7.dp, vertical = 3.dp)
+                ) {
+                    Text(
+                        text = "⛶ PANTALLA COMPLETA",
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = Color.White,
+                        fontWeight = FontWeight.Black
+                    )
+                }
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
@@ -3710,7 +3817,8 @@ private fun VideoPlayerScreen(isRound: Boolean = false) {
                 .height(if (isRound) 100.dp else 115.dp)
                 .clip(RoundedCornerShape(10.dp))
                 .background(Color(0xFF04060A))
-                .border(1.2.dp, Color(0xFF1A2A40), RoundedCornerShape(10.dp)),
+                .border(1.2.dp, Color(0xFF1A2A40), RoundedCornerShape(10.dp))
+                .clickable { isFullscreen = true },
             contentAlignment = Alignment.Center
         ) {
             if (videoUri != null) {
@@ -3854,6 +3962,18 @@ private fun VideoPlayerScreen(isRound: Boolean = false) {
                 contentAlignment = Alignment.Center
             ) {
                 Text(text = if (isPlaying) "❚❚" else "▶", fontSize = 18.sp, color = Color.Black)
+            }
+
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFFE25227))
+                    .border(1.dp, Color(0xFFB83B17), RoundedCornerShape(8.dp))
+                    .clickable { isFullscreen = true },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(text = "⛶", fontSize = 17.sp, color = Color.White)
             }
 
             Box(
@@ -4419,14 +4539,18 @@ private fun MinutesScreen(
                         2 -> speakerZone3
                         else -> speakerZone4
                     }
-                    if (zone.isNotEmpty()) {
-                        zone.removeAt(0)
-                        val jitter = Random.nextFloat() * 0.15f
-                        val bandVal = if (z == activeSpeakerIndex) {
-                            (normalized * (0.75f + Random.nextFloat() * 0.25f)).coerceIn(0.2f, 0.98f)
-                        } else {
-                            (normalized * 0.28f + jitter).coerceIn(0.08f, 0.45f)
+                    val jitter = Random.nextFloat() * 0.15f
+                    val bandVal = if (z == activeSpeakerIndex) {
+                        (normalized * (0.75f + Random.nextFloat() * 0.25f)).coerceIn(0.2f, 0.98f)
+                    } else {
+                        (normalized * 0.28f + jitter).coerceIn(0.08f, 0.45f)
+                    }
+                    if (zone.size >= 7) {
+                        for (k in 0 until zone.size - 1) {
+                            zone[k] = zone[k + 1]
                         }
+                        zone[zone.size - 1] = bandVal
+                    } else {
                         zone.add(bandVal)
                     }
                 }
@@ -4454,24 +4578,40 @@ private fun MinutesScreen(
     }
 
     fun startMeetingSession() {
-        val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-        val publicMeetingsDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_RECORDINGS), "JOWELL/Reuniones").apply { mkdirs() }
-        val audioFile = File(publicMeetingsDir, "Reunion_$timeStamp.m4a")
-        val txtFile = File(publicMeetingsDir, "Reunion_$timeStamp.txt")
-        currentMeetingAudioFile = audioFile
-        currentMeetingTxtFile = txtFile
-        meetingSavedMessage = null
-
         try {
-            previewPlayer?.stop()
-            previewPlayer?.release()
-            previewPlayer = null
-            isPreviewPlaying = false
-        } catch (e: Exception) {}
+            val hasPerm = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+            if (!hasPerm) {
+                voiceManager.speakDirectly("Se requiere permiso de micrófono para iniciar la reunión.")
+                meetingSavedMessage = "⚠️ Otorga permiso de micrófono en Ajustes"
+                return
+            }
 
-        // Iniciar transcriptor en vivo con prioridad exclusiva de micrófono (sin colisión de hardware)
-        isRecordingAudio = true
-        voiceManager.startConversationMode()
+            val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+            val publicMeetingsDir = try {
+                File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_RECORDINGS), "JOWELL/Reuniones").also { it.mkdirs() }
+            } catch (e: Exception) {
+                context.getExternalFilesDir(Environment.DIRECTORY_RECORDINGS) ?: context.filesDir
+            }
+            val audioFile = File(publicMeetingsDir, "Reunion_$timeStamp.m4a")
+            val txtFile = File(publicMeetingsDir, "Reunion_$timeStamp.txt")
+            currentMeetingAudioFile = audioFile
+            currentMeetingTxtFile = txtFile
+            meetingSavedMessage = null
+
+            try {
+                previewPlayer?.stop()
+                previewPlayer?.release()
+                previewPlayer = null
+                isPreviewPlaying = false
+            } catch (e: Exception) {}
+
+            // Iniciar transcriptor en vivo con prioridad exclusiva de micrófono (sin colisión de hardware)
+            isRecordingAudio = true
+            voiceManager.startConversationMode()
+        } catch (e: Throwable) {
+            Log.e("MinutesScreen", "Error al iniciar sesión de reunión", e)
+            meetingSavedMessage = "Error al iniciar: ${e.message}"
+        }
     }
 
     fun stopAndSaveMeetingSession() {
@@ -5255,7 +5395,7 @@ private fun TacticalCompassDial(
     headingDegrees: Int,
     cardinalDirection: String,
     modifier: Modifier = Modifier,
-    dialSize: Int = 74
+    dialSize: Int = 100
 ) {
     var targetAngle by remember { mutableFloatStateOf(headingDegrees.toFloat()) }
     LaunchedEffect(headingDegrees) {
@@ -5285,34 +5425,38 @@ private fun TacticalCompassDial(
             val center = Offset(size.width / 2f, size.height / 2f)
             val radius = (size.minDimension / 2f - 3.dp.toPx()).coerceAtLeast(1f)
 
-            // Fondo circular OLED profundo
+            // Fondo circular OLED profundo con gradiente sutil
             drawCircle(
-                color = Color(0xFF0C1017),
+                brush = Brush.radialGradient(
+                    colors = listOf(Color(0xFF161E28), Color(0xFF090D13)),
+                    center = center,
+                    radius = radius
+                ),
                 radius = radius,
                 center = center
             )
-            // Anillo exterior de titanio anodizado
+            // Anillo exterior de titanio táctico
             drawCircle(
-                color = Color(0xFF2B3742),
+                color = Color(0xFFE25227),
                 radius = radius,
                 center = center,
                 style = Stroke(width = 2.dp.toPx())
             )
             // Anillo secundario interior
             drawCircle(
-                color = Color(0xFF1B242C),
-                radius = (radius * 0.72f).coerceAtLeast(1f),
+                color = Color(0xFF37474F),
+                radius = (radius * 0.75f).coerceAtLeast(1f),
                 center = center,
-                style = Stroke(width = 1.dp.toPx())
+                style = Stroke(width = 1.2.dp.toPx())
             )
 
-            // 12 marcas de rumbo (cada 30 grados)
+            // 12 marcas de rumbo (cada 30 grados) con mayor contraste
             for (i in 0 until 12) {
                 val angleDeg = i * 30.0
                 val angleRad = Math.toRadians(angleDeg)
                 val isCardinal = i % 3 == 0
-                val tickLen = if (isCardinal) 6.dp.toPx() else 3.5.dp.toPx()
-                val tickColor = if (i == 0) Color(0xFFFF5722) else Color(0xFF78909C)
+                val tickLen = if (i == 0) 9.dp.toPx() else if (isCardinal) 7.dp.toPx() else 4.dp.toPx()
+                val tickColor = if (i == 0) Color(0xFFFF5722) else if (isCardinal) Color(0xFFECEFF1) else Color(0xFF78909C)
 
                 val startX = (center.x + (radius - tickLen) * Math.sin(angleRad)).toFloat()
                 val startY = (center.y - (radius - tickLen) * Math.cos(angleRad)).toFloat()
@@ -5323,7 +5467,7 @@ private fun TacticalCompassDial(
                     color = tickColor,
                     start = Offset(startX, startY),
                     end = Offset(endX, endY),
-                    strokeWidth = if (isCardinal) 2.2.dp.toPx() else 1.2.dp.toPx()
+                    strokeWidth = if (i == 0) 3.5.dp.toPx() else if (isCardinal) 2.5.dp.toPx() else 1.4.dp.toPx()
                 )
             }
         }
@@ -5336,32 +5480,32 @@ private fun TacticalCompassDial(
         ) {
             if (size.width <= 0f || size.height <= 0f || size.minDimension <= 15.dp.toPx()) return@Canvas
             val center = Offset(size.width / 2f, size.height / 2f)
-            val needleLen = (size.minDimension / 2f - 7.dp.toPx()).coerceAtLeast(1f)
-            val needleWidth = (5.dp.toPx()).coerceAtLeast(1f)
+            val needleLen = (size.minDimension / 2f - 9.dp.toPx()).coerceAtLeast(1f)
+            val needleWidth = (7.dp.toPx()).coerceAtLeast(1f)
 
-            // Flecha Norte (Naranja CDPE táctico de alta visibilidad)
+            // Flecha Norte (Naranja CDPE táctico brillante de alta visibilidad)
             val northPath = Path().apply {
                 moveTo(center.x, center.y - needleLen)
                 lineTo(center.x + needleWidth, center.y)
-                lineTo(center.x, center.y - 2.5.dp.toPx())
+                lineTo(center.x, center.y - 3.dp.toPx())
                 lineTo(center.x - needleWidth, center.y)
                 close()
             }
             drawPath(northPath, color = Color(0xFFFF5722))
 
-            // Flecha Sur (Plata / Acero templado)
+            // Flecha Sur (Plata / Acero templado brillante)
             val southPath = Path().apply {
                 moveTo(center.x, center.y + needleLen)
                 lineTo(center.x + needleWidth, center.y)
-                lineTo(center.x, center.y + 2.5.dp.toPx())
+                lineTo(center.x, center.y + 3.dp.toPx())
                 lineTo(center.x - needleWidth, center.y)
                 close()
             }
-            drawPath(southPath, color = Color(0xFF90A4AE))
+            drawPath(southPath, color = Color(0xFFECEFF1))
 
             // Pivote central de latón / rodamiento
-            drawCircle(color = Color(0xFF14181E), radius = (4.5.dp.toPx()).coerceAtLeast(1f), center = center)
-            drawCircle(color = Color(0xFFFFD54F), radius = (2.dp.toPx()).coerceAtLeast(0.5f), center = center)
+            drawCircle(color = Color(0xFF0C1017), radius = (5.5.dp.toPx()).coerceAtLeast(1f), center = center)
+            drawCircle(color = Color(0xFFFFD54F), radius = (2.5.dp.toPx()).coerceAtLeast(0.5f), center = center)
         }
     }
 }
@@ -5633,10 +5777,10 @@ private fun StandbyScreen(
         Box(
             modifier = Modifier
                 .fillMaxWidth(if (isRound) 0.96f else 1f)
-                .clip(RoundedCornerShape(12.dp))
-                .border(1.5.dp, Color(0xFFE25227), RoundedCornerShape(12.dp))
-                .background(Color(0xFF10131A))
-                .padding(horizontal = 8.dp, vertical = 6.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .border(1.8.dp, Color(0xFFE25227), RoundedCornerShape(14.dp))
+                .background(Color(0xFF0C1017))
+                .padding(horizontal = 10.dp, vertical = if (isRound) 6.dp else 10.dp)
                 .clickable { onOpenSettings() }
         ) {
             if (isRound) {
@@ -5644,7 +5788,7 @@ private fun StandbyScreen(
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -5654,26 +5798,27 @@ private fun StandbyScreen(
                         TacticalCompassDial(
                             headingDegrees = telemetry.headingDegrees,
                             cardinalDirection = telemetry.cardinalDirection,
-                            dialSize = 56
+                            dialSize = 82
                         )
-                        Column {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
                                 text = "${telemetry.headingDegrees}° ${telemetry.cardinalDirection}",
-                                fontSize = 14.sp,
+                                fontSize = 16.sp,
                                 fontFamily = FontFamily.Monospace,
                                 fontWeight = FontWeight.Black,
                                 color = Color(0xFF00E676)
                             )
                             Text(
                                 text = "RUMBO MAGNÉTICO",
-                                fontSize = 8.sp,
+                                fontSize = 8.5.sp,
                                 fontFamily = FontFamily.Monospace,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF78909C)
                             )
+                            Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 text = "${telemetry.batteryLevel}% ${if (telemetry.isCharging) "⚡" else "🔋"}",
-                                fontSize = 11.sp,
+                                fontSize = 13.sp,
                                 fontFamily = FontFamily.Monospace,
                                 fontWeight = FontWeight.Black,
                                 color = if (telemetry.batteryLevel > 20) Color(0xFF00E5FF) else Color(0xFFFF5252)
@@ -5684,14 +5829,14 @@ private fun StandbyScreen(
                     val locStr = if (telemetry.latitude != null && telemetry.longitude != null) {
                         val lat = String.format(Locale.US, "%.3f", telemetry.latitude)
                         val lon = String.format(Locale.US, "%.3f", telemetry.longitude)
-                        val alt = if (telemetry.altitude != null) " · ${telemetry.altitude.roundToInt()}m" else ""
-                        "📍 $lat, $lon$alt"
+                        val alt = if (telemetry.altitude != null) " · ${telemetry.altitude.roundToInt()}m SNM" else ""
+                        "📍 $lat°, $lon°$alt"
                     } else {
-                        "📍 GPS satelital buscando fix..."
+                        "📍 GPS buscando señal..."
                     }
                     Text(
                         text = locStr,
-                        fontSize = 9.sp,
+                        fontSize = 10.sp,
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFFFFD54F),
@@ -5700,50 +5845,50 @@ private fun StandbyScreen(
 
                     Text(
                         text = "💧 Hum: ${telemetry.humidityPercent ?: 65}% · 🌤 ${telemetry.weatherCondition}",
-                        fontSize = 8.5.sp,
+                        fontSize = 9.5.sp,
                         fontFamily = FontFamily.Monospace,
-                        color = Color(0xFFB0BEC5),
+                        color = Color(0xFFCFD8DC),
                         textAlign = TextAlign.Center
                     )
                 }
             } else {
-                // Disposición para Pantalla Rectangular (Cockpit Táctico Completo)
+                // Disposición para Pantalla Rectangular (Cockpit Táctico Completo y Amplio)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    // Columna Izquierda: Brújula táctica real giratoria
+                    // Columna Izquierda: Brújula táctica real giratoria grande
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.width(76.dp)
+                        modifier = Modifier.width(115.dp)
                     ) {
                         TacticalCompassDial(
                             headingDegrees = telemetry.headingDegrees,
                             cardinalDirection = telemetry.cardinalDirection,
-                            dialSize = 64
+                            dialSize = 105
                         )
-                        Spacer(modifier = Modifier.height(2.dp))
+                        Spacer(modifier = Modifier.height(3.dp))
                         Text(
                             text = "${telemetry.headingDegrees}° ${telemetry.cardinalDirection}",
-                            fontSize = 12.sp,
+                            fontSize = 17.sp,
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Black,
                             color = Color(0xFF00E676)
                         )
                         Text(
-                            text = "RUMBO",
-                            fontSize = 8.sp,
+                            text = "RUMBO MAGNÉTICO",
+                            fontSize = 9.sp,
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFF78909C)
                         )
                     }
 
-                    // Columna Derecha: Bloques de telemetría GPS, Batería y Clima
+                    // Columna Derecha: Bloques de telemetría GPS, Batería y Clima con tipografía grande y nítida
                     Column(
                         modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(2.5.dp)
+                        verticalArrangement = Arrangement.spacedBy(5.dp)
                     ) {
                         // Batería con rayito y porcentaje
                         Row(
@@ -5753,14 +5898,14 @@ private fun StandbyScreen(
                         ) {
                             Text(
                                 text = "ENERGÍA",
-                                fontSize = 8.5.sp,
+                                fontSize = 9.5.sp,
                                 fontFamily = FontFamily.Monospace,
                                 fontWeight = FontWeight.Black,
-                                color = Color(0xFF78909C)
+                                color = Color(0xFF90A4AE)
                             )
                             Text(
                                 text = "${telemetry.batteryLevel}% ${if (telemetry.isCharging) "⚡ CARGANDO" else "🔋 BATERÍA"}",
-                                fontSize = 10.sp,
+                                fontSize = 13.5.sp,
                                 fontFamily = FontFamily.Monospace,
                                 fontWeight = FontWeight.Black,
                                 color = if (telemetry.batteryLevel > 20) Color(0xFF00E5FF) else Color(0xFFFF5252)
@@ -5769,53 +5914,34 @@ private fun StandbyScreen(
 
                         // Coordenadas GPS y Altitud sobre el nivel del mar
                         val locStr = if (telemetry.latitude != null && telemetry.longitude != null) {
-                            val lat = String.format(Locale.US, "%.3f", telemetry.latitude)
-                            val lon = String.format(Locale.US, "%.3f", telemetry.longitude)
-                            val alt = if (telemetry.altitude != null) "${telemetry.altitude.roundToInt()}m" else "N/D"
-                            "📍 $lat°, $lon°\n🏔 Alt: $alt SNM"
+                            val lat = String.format(Locale.US, "%.4f", telemetry.latitude)
+                            val lon = String.format(Locale.US, "%.4f", telemetry.longitude)
+                            val alt = if (telemetry.altitude != null) "${telemetry.altitude.roundToInt()}m SNM" else "Calibrando"
+                            "📍 $lat°, $lon°\n🏔 Altitud: $alt"
                         } else {
-                            "📍 GPS buscando satélites...\n🏔 Altitud sincronizando"
+                            "📍 GPS buscando fix satelital...\n🏔 Altitud: Sincronizando..."
                         }
                         Text(
                             text = locStr,
-                            fontSize = 9.5.sp,
+                            fontSize = 12.sp,
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFFFFD54F),
-                            lineHeight = 12.5.sp
+                            lineHeight = 15.5.sp
                         )
 
                         // Humedad, Clima y Barómetro
                         Text(
-                            text = "💧 Hum: ${telemetry.humidityPercent ?: 65}% · 🌤 ${telemetry.weatherCondition}",
-                            fontSize = 8.5.sp,
+                            text = "💧 Humedad: ${telemetry.humidityPercent ?: 65}%\n🌤 Clima: ${telemetry.weatherCondition}",
+                            fontSize = 11.sp,
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Medium,
-                            color = Color(0xFFB0BEC5)
+                            color = Color(0xFFECEFF1),
+                            lineHeight = 14.sp
                         )
                     }
                 }
             }
-        }
-
-        // ==================== BOTÓN DE MARCA J O W E L L ====================
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(8.dp))
-                .background(Color(0xFF1E1715))
-                .border(1.dp, Color(0xFFE25227), RoundedCornerShape(8.dp))
-                .clickable { onOpenSettings() }
-                .padding(horizontal = 14.dp, vertical = 3.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = "J O W E L L",
-                fontSize = 10.sp,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Black,
-                letterSpacing = 2.sp,
-                color = Color(0xFFFF7043)
-            )
         }
     }
 }
