@@ -25,7 +25,7 @@ data class JarvisResponse(
 object GeminiConfig {
     val DEFAULT_API_KEY: String
         get() = com.example.jarvis.BuildConfig.GEMINI_API_KEY
-    const val MODEL_NAME = "gemini-flash-latest"
+    const val MODEL_NAME = "gemini-3.5-flash-lite"
 }
 
 class GeminiClient(private val apiKey: String = GeminiConfig.DEFAULT_API_KEY) {

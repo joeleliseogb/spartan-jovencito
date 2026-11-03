@@ -244,7 +244,7 @@ class JarvisVoiceManager(private val context: Context) : TextToSpeech.OnInitList
 
     private val apiKey: String
         get() = com.example.jarvis.BuildConfig.GEMINI_API_KEY
-    private val modelName = "gemini-flash-lite-latest"
+    private val modelName = "gemini-3.5-flash-lite"
 
     val meetingEngine by lazy {
         com.example.jarvis.meeting.ExecutiveMeetingEngine(context, deviceAssistantManager)
@@ -556,31 +556,32 @@ class JarvisVoiceManager(private val context: Context) : TextToSpeech.OnInitList
     private fun calculateRequiredSilenceMillis(text: String): Long {
         val lower = text.lowercase(Locale("es")).trim()
 
-        // 1. Si es comando de app, música o directiva directa ("abre...", "pon música...", "inventario", "llama...") -> Respuesta instantánea (700ms)
+        // 1. Comandos de acción directa o aplicaciones -> Respuesta inmediata (350ms)
         if (lower.startsWith("abre ") || lower.startsWith("abrir ") || lower.startsWith("inicia ") ||
             lower.startsWith("ejecuta ") || lower.startsWith("pon ") || lower.startsWith("reproduce ") ||
             lower.startsWith("llama ") || lower.contains("musica") || lower.contains("música") ||
-            lower.contains("inventario") || lower.contains("que apps") || lower.contains("qué apps")) {
-            return 700L
+            lower.contains("inventario") || lower.contains("agenda") || lower.contains("reunion") || lower.contains("reunión") ||
+            lower.contains("que apps") || lower.contains("qué apps")) {
+            return 350L
         }
 
-        // 2. Si termina con conector incompleto (y, pero, porque, o sea...) -> dar respiro moderado
+        // 2. Si termina con conector incompleto (y, pero, porque, o sea...) -> dar respiro breve
         if (isThoughtIncomplete(lower)) {
-            return 1600L
+            return 900L
         }
 
-        // 3. Si se dirigieron directamente a Siri, Jarvis o Jovencito -> Rápido (850ms)
+        // 3. Si se dirigieron directamente a Siri, Jarvis o Jovencito -> Rápido (450ms)
         if (isDirectlyAddressingSiri(lower)) {
-            return 850L
+            return 450L
         }
 
-        // 4. Si termina con interrogación (?)
+        // 4. Si termina con interrogación (?) -> Rápido (500ms)
         if (lower.endsWith("?") || lower.endsWith("¿")) {
-            return 950L
+            return 500L
         }
 
-        // 5. Pausa conversacional natural estándar
-        return 1100L
+        // 5. Pausa conversacional natural estándar ágil (650ms)
+        return 650L
     }
 
     private fun isThoughtIncomplete(text: String): Boolean {
