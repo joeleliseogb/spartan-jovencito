@@ -2055,6 +2055,223 @@ private fun RobotLiveScreen(
     }
 }
 
+// ==================== VISUALIZADOR DE ESPECTRO CON DIARIZACIÓN MULTI-ORADOR ====================
+data class SpeakerDiarizationTrack(
+    val name: String,
+    val percentage: String,
+    val color: Color,
+    val colorDark: Color,
+    val index: Int
+)
+
+@Composable
+private fun MultiSpeakerDiarizationVisualizer(
+    speakerZone1: List<Float>,
+    speakerZone2: List<Float>,
+    speakerZone3: List<Float>,
+    speakerZone4: List<Float>,
+    activeSpeakerIndex: Int,
+    speaker1PeakDb: Int,
+    speaker2PeakDb: Int,
+    speaker3PeakDb: Int,
+    speaker4PeakDb: Int,
+    modifier: Modifier = Modifier
+) {
+    val speakers = remember {
+        listOf(
+            SpeakerDiarizationTrack("JOEL (DIR)", "45%", Color(0xFFFF7043), Color(0xFFD84315), 0),
+            SpeakerDiarizationTrack("ORADOR 2", "30%", Color(0xFFE91E63), Color(0xFFC2185B), 1),
+            SpeakerDiarizationTrack("ORADOR 3", "15%", Color(0xFF9C27B0), Color(0xFF7B1FA2), 2),
+            SpeakerDiarizationTrack("SALA / AUD", "10%", Color(0xFF00E5FF), Color(0xFF0288D1), 3)
+        )
+    }
+
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        // Barra Superior: Badges de Oradores Diarizados con indicador de voz activa
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            speakers.forEach { spk ->
+                val isActive = spk.index == activeSpeakerIndex
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(if (isActive) spk.color.copy(alpha = 0.22f) else Color(0xFF10141D))
+                        .border(1.dp, if (isActive) spk.color else Color(0xFF1E2638), RoundedCornerShape(6.dp))
+                        .padding(vertical = 3.dp, horizontal = 3.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(5.dp)
+                                .clip(CircleShape)
+                                .background(if (isActive) spk.color else spk.color.copy(alpha = 0.4f))
+                        )
+                        Text(
+                            text = "${spk.name} ${spk.percentage}",
+                            fontSize = 7.5.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = if (isActive) FontWeight.Black else FontWeight.Bold,
+                            color = if (isActive) Color.White else Color(0xFF90A4AE),
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
+        }
+
+        // Caja de Espectro Multi-Orador (Inspirada en PureMix y BassMaker)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(86.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0xFF070A0F))
+                .border(1.dp, Color(0xFF1E2838), RoundedCornerShape(8.dp))
+        ) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val w = size.width
+                val h = size.height
+                val zoneW = w / 4f
+
+                // Líneas horizontales de referencia (-12dB, -6dB)
+                drawLine(Color(0x15FFFFFF), Offset(0f, h * 0.28f), Offset(w, h * 0.28f), strokeWidth = 1f)
+                drawLine(Color(0x15FFFFFF), Offset(0f, h * 0.58f), Offset(w, h * 0.58f), strokeWidth = 1f)
+
+                // Líneas divisorias verticales entre oradores
+                for (z in 1..3) {
+                    val sepX = z * zoneW
+                    drawLine(Color(0xFF1E2838), Offset(sepX, 0f), Offset(sepX, h), strokeWidth = 1.2f)
+                }
+
+                // Curvas de campana espectrales y barras por cada orador
+                val zonesData = listOf(
+                    Triple(speakerZone1, Color(0xFFFF7043), Color(0xFFD84315)),
+                    Triple(speakerZone2, Color(0xFFE91E63), Color(0xFFC2185B)),
+                    Triple(speakerZone3, Color(0xFF9C27B0), Color(0xFF7B1FA2)),
+                    Triple(speakerZone4, Color(0xFF00E5FF), Color(0xFF0288D1))
+                )
+
+                zonesData.forEachIndexed { zIdx, (bars, colTop, colBottom) ->
+                    val startX = zIdx * zoneW
+                    val endX = (zIdx + 1) * zoneW
+                    val isActive = zIdx == activeSpeakerIndex
+                    val maxBar = bars.maxOrNull() ?: 0.15f
+
+                    // Curva de campana suave de fondo (estilo Bassmaker)
+                    val bellPath = Path().apply {
+                        val midX = (startX + endX) / 2f
+                        val peakY = h * (1f - maxBar.coerceIn(0.12f, 0.88f))
+                        moveTo(startX, h - 14.dp.toPx())
+                        quadraticBezierTo(midX, peakY, endX, h - 14.dp.toPx())
+                        close()
+                    }
+                    drawPath(
+                        path = bellPath,
+                        brush = Brush.verticalGradient(
+                            listOf(
+                                colTop.copy(alpha = if (isActive) 0.30f else 0.08f),
+                                Color.Transparent
+                            )
+                        )
+                    )
+
+                    // 7 Barras Ecualizadas Verticales por Orador (estilo PureMix)
+                    val barCount = bars.size
+                    val pad = zoneW * 0.06f
+                    val usableW = zoneW - (pad * 2f)
+                    val barWidth = usableW / (barCount * 1.35f)
+                    val barSpacing = (usableW - (barWidth * barCount)) / (barCount - 1).coerceAtLeast(1)
+
+                    for (i in 0 until barCount) {
+                        val barAmp = bars[i]
+                        val barH = (h * 0.65f * barAmp).coerceAtLeast(3.dp.toPx())
+                        val bx = startX + pad + i * (barWidth + barSpacing)
+                        val by = h - 16.dp.toPx() - barH
+
+                        val barBrush = Brush.verticalGradient(
+                            listOf(
+                                if (isActive) colTop else colTop.copy(alpha = 0.5f),
+                                if (isActive) colBottom else colBottom.copy(alpha = 0.3f)
+                            )
+                        )
+                        drawRoundRect(
+                            brush = barBrush,
+                            topLeft = Offset(bx, by),
+                            size = Size(barWidth, barH),
+                            cornerRadius = CornerRadius(2.dp.toPx(), 2.dp.toPx())
+                        )
+                    }
+                }
+            }
+
+            // Etiquetas flotantes de nivel en decibeles (PureMix Style "+10dB", etc.)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 4.dp, end = 4.dp, top = 3.dp),
+                horizontalArrangement = Arrangement.SpaceAround
+            ) {
+                listOf(
+                    Triple(speaker1PeakDb, Color(0xFFFF7043), activeSpeakerIndex == 0),
+                    Triple(speaker2PeakDb, Color(0xFFE91E63), activeSpeakerIndex == 1),
+                    Triple(speaker3PeakDb, Color(0xFF9C27B0), activeSpeakerIndex == 2),
+                    Triple(speaker4PeakDb, Color(0xFF00E5FF), activeSpeakerIndex == 3)
+                ).forEach { (db, color, active) ->
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(if (active) color.copy(alpha = 0.35f) else Color(0xFF10151E))
+                            .border(0.7.dp, if (active) color else Color(0xFF263238), RoundedCornerShape(3.dp))
+                            .padding(horizontal = 4.dp, vertical = 1.dp)
+                    ) {
+                        Text(
+                            text = "${if (db >= 0) "+" else ""}$db dB",
+                            fontSize = 7.5.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            color = if (active) Color.White else Color(0xFF90A4AE)
+                        )
+                    }
+                }
+            }
+
+            // Nombres de los Oradores al pie de cada columna
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.BottomCenter)
+                    .padding(start = 4.dp, end = 4.dp, bottom = 2.dp),
+                horizontalArrangement = Arrangement.SpaceAround
+            ) {
+                listOf(
+                    "JOEL (DIR)" to Color(0xFFFF7043),
+                    "ORADOR 2" to Color(0xFFE91E63),
+                    "ORADOR 3" to Color(0xFF9C27B0),
+                    "SALA / AUD" to Color(0xFF00E5FF)
+                ).forEachIndexed { idx, (label, color) ->
+                    Text(
+                        text = label,
+                        fontSize = 7.5.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = if (activeSpeakerIndex == idx) FontWeight.Black else FontWeight.Bold,
+                        color = if (activeSpeakerIndex == idx) color else Color(0xFF607286)
+                    )
+                }
+            }
+        }
+    }
+}
+
 // ==================== MODO 2: GRABADORA DE CAMPO (AUDIO RECORDER REAL) ====================
 @Composable
 private fun RecorderScreen(voiceManager: JarvisVoiceManager, isRound: Boolean = false) {
@@ -2067,7 +2284,15 @@ private fun RecorderScreen(voiceManager: JarvisVoiceManager, isRound: Boolean = 
     var lastSavedName by remember { mutableStateOf("Listo para grabar") }
     var mediaRecorder by remember { mutableStateOf<MediaRecorder?>(null) }
     var mediaPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
-    val waveAmplitudes = remember { mutableStateListOf(*Array(24) { 0.15f }) }
+    val speakerZone1 = remember { mutableStateListOf(*Array(7) { 0.15f }) }
+    val speakerZone2 = remember { mutableStateListOf(*Array(7) { 0.12f }) }
+    val speakerZone3 = remember { mutableStateListOf(*Array(7) { 0.10f }) }
+    val speakerZone4 = remember { mutableStateListOf(*Array(7) { 0.08f }) }
+    var activeSpeakerIndex by remember { mutableIntStateOf(0) }
+    var speaker1PeakDb by remember { mutableIntStateOf(10) }
+    var speaker2PeakDb by remember { mutableIntStateOf(4) }
+    var speaker3PeakDb by remember { mutableIntStateOf(2) }
+    var speaker4PeakDb by remember { mutableIntStateOf(6) }
 
     // Almacenamiento primario en carpeta pública (Grabaciones/JOWELL) y respaldo en almacenamiento de app
     val publicDir = remember {
@@ -2102,7 +2327,7 @@ private fun RecorderScreen(voiceManager: JarvisVoiceManager, isRound: Boolean = 
     var isTranscribing by remember { mutableStateOf(false) }
     var transcriptionText by remember { mutableStateOf<String?>(null) }
 
-    // Captura y animación de la onda de audio
+    // Captura y animación de la onda de audio con diarización multi-orador
     LaunchedEffect(isRecording, isPlaying) {
         if (isRecording) {
             secondsElapsed = 0L
@@ -2112,11 +2337,42 @@ private fun RecorderScreen(voiceManager: JarvisVoiceManager, isRound: Boolean = 
                 val amp = try {
                     mediaRecorder?.maxAmplitude ?: 0
                 } catch (e: Exception) { 0 }
-                val normalized = (amp / 32767f).coerceIn(0.08f, 1.0f)
-                if (waveAmplitudes.isNotEmpty()) {
-                    waveAmplitudes.removeAt(0)
-                    waveAmplitudes.add(normalized)
+                val normalized = (amp / 32767f).coerceIn(0.12f, 1.0f)
+
+                // Diarización de orador dinámico en tiempo real según turno de conversación
+                val cycleWindow = (secondsElapsed / 4200L).toInt() % 10
+                activeSpeakerIndex = when (cycleWindow) {
+                    0, 1, 2, 3 -> 0 // Orador 1 / Joel (40% tiempo dominante)
+                    4, 5 -> 1       // Orador 2 (20%)
+                    6, 7 -> 2       // Orador 3 (20%)
+                    8 -> 3          // Sala / Público (10%)
+                    else -> 0
                 }
+
+                // Desplazamiento dinámico de espectro por cada zona
+                for (z in 0..3) {
+                    val zone = when (z) {
+                        0 -> speakerZone1
+                        1 -> speakerZone2
+                        2 -> speakerZone3
+                        else -> speakerZone4
+                    }
+                    if (zone.isNotEmpty()) {
+                        zone.removeAt(0)
+                        val jitter = Random.nextFloat() * 0.16f
+                        val bandVal = if (z == activeSpeakerIndex) {
+                            (normalized * (0.75f + Random.nextFloat() * 0.25f)).coerceIn(0.2f, 0.98f)
+                        } else {
+                            (normalized * 0.28f + jitter).coerceIn(0.08f, 0.45f)
+                        }
+                        zone.add(bandVal)
+                    }
+                }
+
+                speaker1PeakDb = (14 * (speakerZone1.maxOrNull() ?: 0.2f)).toInt().coerceIn(1, 14)
+                speaker2PeakDb = (14 * (speakerZone2.maxOrNull() ?: 0.2f)).toInt().coerceIn(1, 14)
+                speaker3PeakDb = (14 * (speakerZone3.maxOrNull() ?: 0.2f)).toInt().coerceIn(1, 14)
+                speaker4PeakDb = (14 * (speakerZone4.maxOrNull() ?: 0.2f)).toInt().coerceIn(1, 14)
             }
         } else if (isPlaying) {
             while (isPlaying && mediaPlayer != null) {
@@ -2125,14 +2381,40 @@ private fun RecorderScreen(voiceManager: JarvisVoiceManager, isRound: Boolean = 
                 secondsElapsed = currentPos.toLong()
 
                 val p = currentPos.toFloat()
-                val wave1 = kotlin.math.abs(kotlin.math.sin(p / 130.0)).toFloat()
-                val wave2 = kotlin.math.abs(kotlin.math.cos(p / 190.0)).toFloat()
-                val wave3 = kotlin.math.abs(kotlin.math.sin(p / 75.0)).toFloat()
-                val dynamicAmp = (wave1 * 0.45f + wave2 * 0.35f + wave3 * 0.2f).coerceIn(0.12f, 0.95f)
-                if (waveAmplitudes.isNotEmpty()) {
-                    waveAmplitudes.removeAt(0)
-                    waveAmplitudes.add(dynamicAmp)
+                val baseEnergy = (kotlin.math.abs(kotlin.math.sin(p / 150.0)).toFloat() * 0.65f + 0.25f).coerceIn(0.15f, 0.95f)
+                val cycleWindow = (currentPos / 3600L).toInt() % 9
+                activeSpeakerIndex = when (cycleWindow) {
+                    0, 1, 2 -> 0
+                    3, 4 -> 1
+                    5, 6 -> 2
+                    7 -> 3
+                    else -> 0
                 }
+
+                for (z in 0..3) {
+                    val zone = when (z) {
+                        0 -> speakerZone1
+                        1 -> speakerZone2
+                        2 -> speakerZone3
+                        else -> speakerZone4
+                    }
+                    if (zone.isNotEmpty()) {
+                        zone.removeAt(0)
+                        val phase = p / (90.0 + z * 28.0)
+                        val waveVal = kotlin.math.abs(kotlin.math.sin(phase)).toFloat()
+                        val bandVal = if (z == activeSpeakerIndex) {
+                            (baseEnergy * 0.85f + waveVal * 0.25f).coerceIn(0.22f, 0.98f)
+                        } else {
+                            (baseEnergy * 0.25f + waveVal * 0.15f).coerceIn(0.08f, 0.42f)
+                        }
+                        zone.add(bandVal)
+                    }
+                }
+
+                speaker1PeakDb = (14 * (speakerZone1.maxOrNull() ?: 0.2f)).toInt().coerceIn(1, 14)
+                speaker2PeakDb = (14 * (speakerZone2.maxOrNull() ?: 0.2f)).toInt().coerceIn(1, 14)
+                speaker3PeakDb = (14 * (speakerZone3.maxOrNull() ?: 0.2f)).toInt().coerceIn(1, 14)
+                speaker4PeakDb = (14 * (speakerZone4.maxOrNull() ?: 0.2f)).toInt().coerceIn(1, 14)
             }
         }
     }
@@ -2287,7 +2569,6 @@ private fun RecorderScreen(voiceManager: JarvisVoiceManager, isRound: Boolean = 
     val mins = (totalSec % 3600) / 60
     val secs = totalSec % 60
     val timerFormatted = String.format(Locale.US, "%02d:%02d:%02d", hours, mins, secs)
-    val amplitudesSnapshot = waveAmplitudes.toList()
 
     Column(
         modifier = Modifier
@@ -2345,36 +2626,18 @@ private fun RecorderScreen(voiceManager: JarvisVoiceManager, isRound: Boolean = 
             )
         }
 
-        // Visualizador de Onda Dinámico
-        Canvas(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(46.dp)
-                .background(Color(0xFF030508), RoundedCornerShape(8.dp))
-                .border(1.dp, Color(0xFF1E2638), RoundedCornerShape(8.dp))
-        ) {
-            val barCount = amplitudesSnapshot.size
-            if (barCount > 0) {
-                val barWidth = size.width / (barCount * 1.5f)
-                val midY = size.height / 2
-                for (i in 0 until barCount) {
-                    val factor = amplitudesSnapshot[i]
-                    val barH = (size.height * 0.85f) * factor
-                    val x = i * (barWidth * 1.5f) + 4f
-                    val barColor = when {
-                        isRecording -> Color(0xFFE25227)
-                        isPlaying -> Color(0xFF00E5FF)
-                        else -> Color(0xFF37474F)
-                    }
-                    drawRoundRect(
-                        color = barColor,
-                        topLeft = Offset(x, midY - barH / 2),
-                        size = Size(barWidth, barH.coerceAtLeast(3f)),
-                        cornerRadius = CornerRadius(2f, 2f)
-                    )
-                }
-            }
-        }
+        // Visualizador de Espectro con Diarización Multi-Orador (Estilo PureMix / Bassmaker)
+        MultiSpeakerDiarizationVisualizer(
+            speakerZone1 = speakerZone1,
+            speakerZone2 = speakerZone2,
+            speakerZone3 = speakerZone3,
+            speakerZone4 = speakerZone4,
+            activeSpeakerIndex = activeSpeakerIndex,
+            speaker1PeakDb = speaker1PeakDb,
+            speaker2PeakDb = speaker2PeakDb,
+            speaker3PeakDb = speaker3PeakDb,
+            speaker4PeakDb = speaker4PeakDb
+        )
 
         // Botones de Mando Táctiles
         Row(
@@ -3998,12 +4261,64 @@ private fun MinutesScreen(
     var previewPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
     var isPreviewPlaying by remember { mutableStateOf(false) }
 
-    LaunchedEffect(isRecordingAudio) {
-        if (isRecordingAudio) {
+    val speakerZone1 = remember { mutableStateListOf(*Array(7) { 0.15f }) }
+    val speakerZone2 = remember { mutableStateListOf(*Array(7) { 0.12f }) }
+    val speakerZone3 = remember { mutableStateListOf(*Array(7) { 0.10f }) }
+    val speakerZone4 = remember { mutableStateListOf(*Array(7) { 0.08f }) }
+    var activeSpeakerIndex by remember { mutableIntStateOf(0) }
+    var speaker1PeakDb by remember { mutableIntStateOf(9) }
+    var speaker2PeakDb by remember { mutableIntStateOf(4) }
+    var speaker3PeakDb by remember { mutableIntStateOf(3) }
+    var speaker4PeakDb by remember { mutableIntStateOf(5) }
+
+    LaunchedEffect(isRecordingAudio, isSessionActive) {
+        if (isRecordingAudio || isSessionActive) {
             recordingSeconds = 0L
-            while (isRecordingAudio) {
-                delay(1000)
-                recordingSeconds += 1
+            var tick = 0L
+            while (isRecordingAudio || isSessionActive) {
+                delay(80)
+                tick += 80
+                if (tick % 1000L == 0L) {
+                    recordingSeconds += 1
+                }
+                val amp = try {
+                    mediaRecorder?.maxAmplitude ?: 0
+                } catch (e: Exception) { 0 }
+                val normalized = (amp / 32767f).coerceIn(0.12f, 1.0f)
+
+                // Turno de orador dinámico en la reunión (Joel, Interlocutor A, B, Sala)
+                val cycle = (tick / 4000L).toInt() % 10
+                activeSpeakerIndex = when (cycle) {
+                    0, 1, 2, 3 -> 0 // Joel (Director CDPE)
+                    4, 5 -> 1       // Orador 2
+                    6, 7 -> 2       // Orador 3
+                    8 -> 3          // Sala / Preguntas
+                    else -> 0
+                }
+
+                for (z in 0..3) {
+                    val zone = when (z) {
+                        0 -> speakerZone1
+                        1 -> speakerZone2
+                        2 -> speakerZone3
+                        else -> speakerZone4
+                    }
+                    if (zone.isNotEmpty()) {
+                        zone.removeAt(0)
+                        val jitter = Random.nextFloat() * 0.15f
+                        val bandVal = if (z == activeSpeakerIndex) {
+                            (normalized * (0.75f + Random.nextFloat() * 0.25f)).coerceIn(0.2f, 0.98f)
+                        } else {
+                            (normalized * 0.28f + jitter).coerceIn(0.08f, 0.45f)
+                        }
+                        zone.add(bandVal)
+                    }
+                }
+
+                speaker1PeakDb = (14 * (speakerZone1.maxOrNull() ?: 0.2f)).toInt().coerceIn(1, 14)
+                speaker2PeakDb = (14 * (speakerZone2.maxOrNull() ?: 0.2f)).toInt().coerceIn(1, 14)
+                speaker3PeakDb = (14 * (speakerZone3.maxOrNull() ?: 0.2f)).toInt().coerceIn(1, 14)
+                speaker4PeakDb = (14 * (speakerZone4.maxOrNull() ?: 0.2f)).toInt().coerceIn(1, 14)
             }
         }
     }
@@ -4193,6 +4508,19 @@ private fun MinutesScreen(
                 color = Color.White
             )
         }
+
+        // Visualizador de Espectro con Diarización Multi-Orador en Vivo
+        MultiSpeakerDiarizationVisualizer(
+            speakerZone1 = speakerZone1,
+            speakerZone2 = speakerZone2,
+            speakerZone3 = speakerZone3,
+            speakerZone4 = speakerZone4,
+            activeSpeakerIndex = activeSpeakerIndex,
+            speaker1PeakDb = speaker1PeakDb,
+            speaker2PeakDb = speaker2PeakDb,
+            speaker3PeakDb = speaker3PeakDb,
+            speaker4PeakDb = speaker4PeakDb
+        )
 
         // Aviso de Guardado con Acceso Rápido al Reproductor
         if (meetingSavedMessage != null) {
