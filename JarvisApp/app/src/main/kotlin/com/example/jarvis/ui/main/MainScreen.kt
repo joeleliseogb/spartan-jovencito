@@ -2333,6 +2333,13 @@ private fun RecorderScreen(voiceManager: JarvisVoiceManager, isRound: Boolean = 
             publicDir.listFiles()?.filter { it.extension in listOf("m4a", "mp3", "wav", "aac") }?.let { list.addAll(it) }
         } catch (e: Exception) {}
         try {
+            File(publicDir, "Reuniones").listFiles()?.filter { it.extension in listOf("m4a", "mp3", "wav", "aac") }?.let {
+                for (f in it) {
+                    if (list.none { existing -> existing.name == f.name }) list.add(f)
+                }
+            }
+        } catch (e: Exception) {}
+        try {
             appDir.listFiles()?.filter { it.extension in listOf("m4a", "mp3", "wav", "aac") }?.let {
                 for (f in it) {
                     if (list.none { existing -> existing.name == f.name }) list.add(f)
@@ -4743,6 +4750,35 @@ private fun MinutesScreen(
         }
     }
 
+    fun reprocessMeetingWithAi() {
+        val audio = currentMeetingAudioFile ?: return
+        if (!audio.exists() || audio.length() == 0L || isAiProcessing) return
+        isAiProcessing = true
+        meetingSavedMessage = "🔄 Conectando con IA para transcribir audio guardado..."
+
+        scope.launch(Dispatchers.IO) {
+            try {
+                val cloudTranscript = voiceManager.transcribeAudioFile(audio, forceCloud = true)
+                val report = voiceManager.finalizeAndProcessMeeting(
+                    audioFile = audio,
+                    durationSeconds = recordingSeconds,
+                    directAiTranscript = cloudTranscript
+                )
+                withContext(Dispatchers.Main) {
+                    isAiProcessing = false
+                    selectedMeetingTab = 0
+                    meetingSavedMessage = "✅ Acta transcrita con IA: ${File(report.savedFilePath).name}"
+                }
+            } catch (e: Exception) {
+                Log.e("Minutes", "Error reprocesando con IA", e)
+                withContext(Dispatchers.Main) {
+                    isAiProcessing = false
+                    meetingSavedMessage = "⚠️ Sin internet: ${e.message ?: "Comprueba tu conexión e intenta de nuevo."}"
+                }
+            }
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -4854,40 +4890,64 @@ private fun MinutesScreen(
                 )
                 currentMeetingAudioFile?.let { audio ->
                     if (audio.exists()) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(Color(0xFF00E676))
-                                .clickable {
-                                    try {
-                                        if (isPreviewPlaying && previewPlayer != null) {
-                                            previewPlayer?.stop()
-                                            previewPlayer?.release()
-                                            previewPlayer = null
-                                            isPreviewPlaying = false
-                                        } else {
-                                            previewPlayer?.release()
-                                            previewPlayer = MediaPlayer().apply {
-                                                setDataSource(audio.absolutePath)
-                                                prepare()
-                                                start()
-                                                setOnCompletionListener { isPreviewPlaying = false }
-                                            }
-                                            isPreviewPlaying = true
-                                        }
-                                    } catch (e: Exception) {
-                                        Log.e("Minutes", "Error reproduciendo preview", e)
-                                    }
-                                }
-                                .padding(horizontal = 6.dp, vertical = 3.dp)
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = if (isPreviewPlaying) "❚❚" else "▶ OÍR",
-                                fontSize = 10.sp,
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.Black
-                            )
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(Color(0xFF00E676))
+                                    .clickable {
+                                        try {
+                                            if (isPreviewPlaying && previewPlayer != null) {
+                                                previewPlayer?.stop()
+                                                previewPlayer?.release()
+                                                previewPlayer = null
+                                                isPreviewPlaying = false
+                                            } else {
+                                                previewPlayer?.release()
+                                                previewPlayer = MediaPlayer().apply {
+                                                    setDataSource(audio.absolutePath)
+                                                    prepare()
+                                                    start()
+                                                    setOnCompletionListener { isPreviewPlaying = false }
+                                                }
+                                                isPreviewPlaying = true
+                                            }
+                                        } catch (e: Exception) {
+                                            Log.e("Minutes", "Error reproduciendo preview", e)
+                                        }
+                                    }
+                                    .padding(horizontal = 6.dp, vertical = 3.dp)
+                            ) {
+                                Text(
+                                    text = if (isPreviewPlaying) "❚❚" else "▶ OÍR",
+                                    fontSize = 10.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.Black
+                                )
+                            }
+
+                            // Botón para procesar con IA cuando se conecte a internet
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(if (isAiProcessing) Color(0xFF616161) else Color(0xFF00E5FF))
+                                    .clickable {
+                                        if (!isAiProcessing) reprocessMeetingWithAi()
+                                    }
+                                    .padding(horizontal = 6.dp, vertical = 3.dp)
+                            ) {
+                                Text(
+                                    text = if (isAiProcessing) "⏳" else "🔄 IA",
+                                    fontSize = 10.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.Black
+                                )
+                            }
                         }
                     }
                 }
