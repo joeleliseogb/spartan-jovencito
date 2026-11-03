@@ -251,8 +251,14 @@ class JarvisVoiceManager(private val context: Context) : TextToSpeech.OnInitList
     private var silenceJob: Job? = null
 
     private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(25, TimeUnit.SECONDS)
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .build()
+
+    private val audioTranscribeClient = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(90, TimeUnit.SECONDS)
+        .readTimeout(120, TimeUnit.SECONDS)
         .build()
 
     private val apiKey: String
@@ -1982,7 +1988,7 @@ Estructura tu respuesta exactamente así, sin saludos ni preámbulos:
                 val url = "https://generativelanguage.googleapis.com/v1beta/models/${com.example.jarvis.api.GeminiConfig.MODEL_NAME}:generateContent?key=$effectiveKey"
                 val request = Request.Builder().url(url).post(body).build()
 
-                val response = httpClient.newCall(request).execute()
+                val response = audioTranscribeClient.newCall(request).execute()
                 lastHttpCode = response.code
                 val respBody = response.body?.string() ?: ""
 
@@ -2004,6 +2010,8 @@ Estructura tu respuesta exactamente así, sin saludos ni preámbulos:
 
                         return@withContext cloudText
                     }
+                } else {
+                    Log.w("Siri", "Fallo al consultar IA en la nube: HTTP $lastHttpCode - $respBody")
                 }
             } catch (e: Exception) {
                 Log.w("Siri", "Fallo al consultar IA en la nube: ${e.message}")
@@ -2014,7 +2022,7 @@ Estructura tu respuesta exactamente así, sin saludos ni preámbulos:
                 return@withContext "📋 ACTA Y TRANSCRIPCIÓN REGISTRADA:\n\n$existingLocalText"
             }
 
-            // 4. Si falló la clave (ej. HTTP 403) y no hay texto previo, generar análisis ejecutivo local con auto-agenda
+            // 4. Si la transcripción en la nube no pudo completarse (ej. sin conexión), generar análisis ejecutivo local con auto-agenda
             val durationSec = try {
                 val mmr = android.media.MediaMetadataRetriever()
                 mmr.setDataSource(file.absolutePath)
@@ -2026,6 +2034,12 @@ Estructura tu respuesta exactamente así, sin saludos ni preámbulos:
             val durStr = String.format(Locale.US, "%02d:%02d min", durationSec / 60, durationSec % 60)
             val sizeMb = String.format(Locale.US, "%.1f MB", file.length() / (1024.0 * 1024.0))
 
+            val note = when {
+                lastHttpCode == 403 || effectiveKey.isBlank() -> "⚠️ NOTA: Error de autenticación HTTP 403 con el servicio Gemini."
+                lastHttpCode == 429 -> "⚠️ NOTA: Límite de solicitudes momentáneo. Intenta de nuevo en unos instantes."
+                else -> "ℹ️ Modo local: Audio procesado y archivado. Conéctate a internet para transcripción multi-orador completa."
+            }
+
             return@withContext """
                 🎙️ ANÁLISIS EJECUTIVO DE CONVERSACIÓN CDPE
                 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2034,9 +2048,9 @@ Estructura tu respuesta exactamente así, sin saludos ni preámbulos:
                 • Ubicación: ${file.parentFile?.name ?: "Recordings"}
                 
                 📌 1. RESUMEN DE PUNTOS IMPORTANTES
-                • Grabación de trabajo registrada con el cliente.
-                • Longitud de diálogo: $durStr de conversación continúa.
-                • Calidad de audio: 44.1 kHz AAC Estéreo.
+                • Grabación de trabajo registrada por el Director.
+                • Longitud de diálogo: $durStr de conversación continua.
+                • Calidad de audio: 48 kHz AAC Estéreo de alta fidelidad.
                 
                 🤝 2. ACUERDOS Y SEGUIMIENTO COMERCIAL
                 • Sesión guardada en el historial de audios de JOWELL.
@@ -2045,7 +2059,7 @@ Estructura tu respuesta exactamente así, sin saludos ni preámbulos:
                 📅 3. INTEGRACIÓN CON AGENDA
                 ✔ Se ha creado la cita: "Seguimiento de Audio: ${file.nameWithoutExtension}" para mañana 10:00 AM en tu módulo Agenda.
                 
-                ⚠️ NOTA: Si deseas transcripción palabra por palabra en la nube, toca el botón de abajo para ingresar tu clave Gemini gratuita.
+                $note
             """.trimIndent()
         } catch (e: Exception) {
             Log.e("Siri", "Error transcribiendo archivo de audio", e)

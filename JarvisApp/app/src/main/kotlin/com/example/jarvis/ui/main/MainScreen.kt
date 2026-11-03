@@ -1279,9 +1279,21 @@ private fun PersonalitySettingsDialog(
                                         color = Color(0xFF00E5FF)
                                     )
                                     if (voiceManager.getCustomApiKey().isNotBlank()) {
-                                        Text(text = "ACTIVA ✓", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF00E676))
+                                        Text(text = "PERSONALIZADA ✓", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF00E676))
+                                    } else if (voiceManager.getEffectiveApiKey().isNotBlank()) {
+                                        Text(text = "SISTEMA ACTIVA ✓", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF00E5FF))
                                     }
                                 }
+
+                                Text(
+                                    text = if (voiceManager.getCustomApiKey().isBlank()) 
+                                        "✓ La Clave oficial de Gemini ya está integrada en JOWELL. No requieres ingresar nada a menos que desees tu propia clave."
+                                    else 
+                                        "Usando clave personalizada. Déjalo en blanco para volver a la oficial.",
+                                    fontSize = 10.sp,
+                                    color = Color(0xFF90A4AE),
+                                    lineHeight = 14.sp
+                                )
 
                                 var apiKeyText by remember { mutableStateOf(voiceManager.getCustomApiKey()) }
                                 var savedKeyMsg by remember { mutableStateOf<String?>(null) }
@@ -1292,7 +1304,7 @@ private fun PersonalitySettingsDialog(
                                         apiKeyText = it
                                         savedKeyMsg = null
                                     },
-                                    placeholder = { Text("Pega tu clave AIzaSy... de Google AI Studio", fontSize = 11.sp, color = Color(0xFF757575)) },
+                                    placeholder = { Text("Opcional: pega tu clave AIzaSy...", fontSize = 11.sp, color = Color(0xFF757575)) },
                                     modifier = Modifier.fillMaxWidth(),
                                     singleLine = true,
                                     colors = OutlinedTextFieldDefaults.colors(
@@ -1308,22 +1320,36 @@ private fun PersonalitySettingsDialog(
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(
-                                        text = "Gratis en aistudio.google.com/apikey",
-                                        fontSize = 9.sp,
-                                        color = Color(0xFF90A4AE)
-                                    )
+                                    if (voiceManager.getCustomApiKey().isNotBlank()) {
+                                        Text(
+                                            text = "RESTABLECER OFICIAL",
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFFFF5252),
+                                            modifier = Modifier.clickable {
+                                                voiceManager.setCustomApiKey("")
+                                                apiKeyText = ""
+                                                savedKeyMsg = "¡Restablecida la clave oficial del sistema!"
+                                            }
+                                        )
+                                    } else {
+                                        Text(
+                                            text = "Gratis en aistudio.google.com/apikey",
+                                            fontSize = 9.sp,
+                                            color = Color(0xFF90A4AE)
+                                        )
+                                    }
                                     Box(
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(6.dp))
-                                            .background(Color(0xFFE25227))
+                                            .background(Color(0xFF0D47A1))
                                             .clickable {
                                                 voiceManager.setCustomApiKey(apiKeyText)
-                                                savedKeyMsg = "¡Clave guardada con éxito!"
+                                                savedKeyMsg = if (apiKeyText.isBlank()) "¡Usando clave oficial del sistema!" else "¡Clave guardada con éxito!"
                                             }
                                             .padding(horizontal = 12.dp, vertical = 6.dp)
                                     ) {
-                                        Text(text = "GUARDAR CLAVE", fontSize = 10.sp, fontWeight = FontWeight.Black, color = Color.White)
+                                        Text(text = "GUARDAR", fontSize = 10.sp, fontWeight = FontWeight.Black, color = Color.White)
                                     }
                                 }
                                 if (savedKeyMsg != null) {
@@ -2794,8 +2820,8 @@ private fun RecorderScreen(voiceManager: JarvisVoiceManager, isRound: Boolean = 
                         lineHeight = 18.sp
                     )
 
-                    // Botón de acción directa si la API key requiere configuración
-                    if (transcriptionText?.contains("HTTP 403") == true || transcriptionText?.contains("clave", ignoreCase = true) == true) {
+                    // Botón de acción directa si la API key requiere configuración manual
+                    if (transcriptionText?.contains("HTTP 403") == true || voiceManager.getEffectiveApiKey().isBlank()) {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -2806,7 +2832,7 @@ private fun RecorderScreen(voiceManager: JarvisVoiceManager, isRound: Boolean = 
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = "🔑 INGRESAR CLAVE API DE GEMINI AQUÍ",
+                                text = "🔑 CONFIGURAR CLAVE API PERSONALIZADA",
                                 fontSize = 11.5.sp,
                                 fontFamily = FontFamily.Monospace,
                                 fontWeight = FontWeight.Black,
@@ -2827,19 +2853,22 @@ private fun RecorderScreen(voiceManager: JarvisVoiceManager, isRound: Boolean = 
                         .fillMaxWidth(0.95f)
                         .clip(RoundedCornerShape(12.dp))
                         .background(Color(0xFF141824))
-                        .border(1.5.dp, Color(0xFFE25227), RoundedCornerShape(12.dp))
+                        .border(1.5.dp, Color(0xFF00E5FF), RoundedCornerShape(12.dp))
                         .padding(16.dp)
                 ) {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text(
-                            text = "🔑 CONFIGURAR CLAVE GEMINI API",
+                            text = "🔑 CLAVE GEMINI API",
                             fontSize = 13.5.sp,
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Black,
-                            color = Color(0xFFE25227)
+                            color = Color(0xFF00E5FF)
                         )
                         Text(
-                            text = "Pega tu clave gratuita de Google AI Studio (aistudio.google.com) para transcribir audios de forma ilimitada:",
+                            text = if (voiceManager.getCustomApiKey().isBlank())
+                                "✓ Tu aplicación JOWELL ya incluye la Clave Oficial de Gemini preconfigurada. No requieres ingresar ninguna clave para procesar con IA. Solo añade una aquí si deseas usar tu propia cuenta."
+                            else
+                                "Tienes configurada una clave personalizada. Si deseas volver a la oficial del sistema, presiona 'RESTABLECER'.",
                             fontSize = 11.sp,
                             color = Color(0xFFB0BEC5),
                             lineHeight = 15.sp
@@ -2847,7 +2876,7 @@ private fun RecorderScreen(voiceManager: JarvisVoiceManager, isRound: Boolean = 
                         OutlinedTextField(
                             value = keyInput,
                             onValueChange = { keyInput = it },
-                            placeholder = { Text("Pega aquí tu clave AIzaSy...", color = Color.Gray, fontSize = 11.sp) },
+                            placeholder = { Text("Opcional: pega clave AIzaSy...", color = Color.Gray, fontSize = 11.sp) },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth(),
                             colors = OutlinedTextFieldDefaults.colors(
@@ -2859,36 +2888,57 @@ private fun RecorderScreen(voiceManager: JarvisVoiceManager, isRound: Boolean = 
                         )
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End,
+                            horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = "CANCELAR",
-                                fontSize = 11.5.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.Gray,
-                                modifier = Modifier
-                                    .clickable { showApiKeyDialog = false }
-                                    .padding(8.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(Color(0xFFE25227))
-                                    .clickable {
-                                        voiceManager.setCustomApiKey(keyInput.trim())
-                                        showApiKeyDialog = false
-                                        transcribeCurrentRecording()
-                                    }
-                                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                            if (voiceManager.getCustomApiKey().isNotBlank()) {
+                                Text(
+                                    text = "RESTABLECER",
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFFF5252),
+                                    modifier = Modifier
+                                        .clickable {
+                                            voiceManager.setCustomApiKey("")
+                                            showApiKeyDialog = false
+                                            transcribeCurrentRecording()
+                                        }
+                                        .padding(6.dp)
+                                )
+                            } else {
+                                Spacer(modifier = Modifier.width(1.dp))
+                            }
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "GUARDAR Y TRANSCRIBIR",
+                                    text = "CERRAR",
                                     fontSize = 11.5.sp,
-                                    fontWeight = FontWeight.Black,
-                                    color = Color.White
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.Gray,
+                                    modifier = Modifier
+                                        .clickable { showApiKeyDialog = false }
+                                        .padding(8.dp)
                                 )
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(Color(0xFF0D47A1))
+                                        .clickable {
+                                            voiceManager.setCustomApiKey(keyInput.trim())
+                                            showApiKeyDialog = false
+                                            transcribeCurrentRecording()
+                                        }
+                                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                                ) {
+                                    Text(
+                                        text = "GUARDAR",
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Black,
+                                        color = Color.White
+                                    )
+                                }
                             }
                         }
                     }
