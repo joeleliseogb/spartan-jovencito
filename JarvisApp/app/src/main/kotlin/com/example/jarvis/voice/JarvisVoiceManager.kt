@@ -1911,19 +1911,16 @@ class JarvisVoiceManager(private val context: Context) : TextToSpeech.OnInitList
 
                 val promptText = """
 Eres el Asistente Ejecutivo del Director Joel en CDPE Guatemala.
-Analiza este audio de reunión comercial grabado en una sala amplia, con reverberación y oradores a cierta distancia del micrófono.
+Analiza este audio de reunión grabado en una sala amplia con personas a distancia del micrófono y volumen bajo (alrededor de -37 dB).
 
-INSTRUCCIONES CLAVE DE PROCESAMIENTO:
-1. LIMPIEZA Y GANANCIA: Filtra la estática, el eco y ruidos de fondo de la sala. Amplifica la comprensión de las voces lejanas.
-2. IDENTIFICACIÓN Y DIARIZACIÓN DE ORADORES:
-   - Identifica con precisión al Director Joel (organizador/líder).
-   - Identifica a los clientes, socios e interlocutores que participan en la conversación.
-3. TRANSCRIPCIÓN FIEL: Transcribe cada intervención indicando quién habla y el contenido exacto de sus palabras.
-4. RESUMEN DE PUNTOS IMPORTANTES: Sintetiza los temas clave discutidos (negociaciones, productos, pedidos, metas).
-5. ACUERDOS Y COMPROMISOS: Enumera uno a uno los acuerdos concretos alcanzados y quién se compromete a cumplirlos.
-6. CITAS Y FECHAS: Identifica cualquier fecha o plazo mencionado para la agenda.
+INSTRUCCIONES OBLIGATORIAS DE PROCESAMIENTO:
+1. MÁXIMA SENSIBILIDAD ACÚSTICA (+20 dB): Las voces son tenues y lejanas con ruido de fondo o estática. Amplifica mentalmente las voces y extrae todo lo que dicen en español. NO devuelvas <noise>.
+2. DIARIZACIÓN DE ORADORES: Identifica a cada persona que interviene en la conversación (Director Joel, Clientes, Brenda / Interlocutores).
+3. TRANSCRIPCIÓN DETALLADA: Escribe textualmente cada frase que se pronuncia en la sala.
+4. RESUMEN: Sintetiza los temas tratados y decisiones tomadas.
+5. ACUERDOS Y CITAS: Extrae compromisos, labores, horarios y plazos mencionados para la agenda.
 
-Estructura tu respuesta con encabezados claros:
+Estructura tu respuesta exactamente así:
 📌 1. RESUMEN DE PUNTOS IMPORTANTES
 🤝 2. ACUERDOS Y COMPROMISOS ALCANZADOS
 📅 3. CITAS Y EVENTOS AGENDADOS

@@ -118,17 +118,43 @@ class ExecutiveMeetingEngine(
         val sbTranscription = StringBuilder()
         val substantiveSentences = mutableListOf<String>()
 
+        var parsedKeyPoints = mutableListOf<String>()
+        var parsedAgreements = mutableListOf<String>()
+        var parsedTranscriptText = ""
+
         if (!directAiTranscript.isNullOrBlank()) {
-            sbTranscription.appendLine(directAiTranscript.trim())
-            // Extraer líneas sustantivas para análisis
-            directAiTranscript.lines().forEach { line ->
+            val clean = directAiTranscript.trim()
+            val resumenIdx = clean.indexOf("📌")
+            val acuerdosIdx = clean.indexOf("🤝")
+            val citasIdx = clean.indexOf("📅")
+            val transIdx = clean.indexOf("📝")
+
+            if (resumenIdx != -1 && acuerdosIdx != -1 && acuerdosIdx > resumenIdx) {
+                val sec = clean.substring(resumenIdx, acuerdosIdx).lines()
+                    .filter { it.trim().startsWith("-") || it.trim().startsWith("•") || (it.trim().length > 15 && !it.contains("RESUMEN")) }
+                    .map { it.trim().removePrefix("-").removePrefix("•").trim() }
+                if (sec.isNotEmpty()) parsedKeyPoints.addAll(sec)
+            }
+            if (acuerdosIdx != -1 && citasIdx != -1 && citasIdx > acuerdosIdx) {
+                val sec = clean.substring(acuerdosIdx, citasIdx).lines()
+                    .filter { it.trim().startsWith("-") || it.trim().startsWith("•") || it.trim().matches(Regex("""^\d+\..*""")) }
+                    .map { it.trim().removePrefix("-").removePrefix("•").replace(Regex("""^\d+\.\s*"""), "").trim() }
+                if (sec.isNotEmpty()) parsedAgreements.addAll(sec)
+            }
+            if (transIdx != -1) {
+                parsedTranscriptText = clean.substring(transIdx).substringAfter("\n").trim()
+            } else {
+                parsedTranscriptText = clean
+            }
+
+            clean.lines().forEach { line ->
                 val trimmed = line.trim()
                 if (trimmed.length > 8 && !trimmed.startsWith("===") && !trimmed.startsWith("---") && !isTrivialGreeting(trimmed)) {
                     substantiveSentences.add(trimmed)
                 }
             }
         } else if (history.isEmpty()) {
-            sbTranscription.appendLine("[No se registraron intervenciones habladas durante la sesión]")
+            parsedTranscriptText = "[No se registraron intervenciones habladas durante la sesión]"
         } else {
             history.forEachIndexed { idx, turn ->
                 val speakerLabel = when {
@@ -143,72 +169,86 @@ class ExecutiveMeetingEngine(
                 sbTranscription.appendLine(turn.text)
                 sbTranscription.appendLine()
 
-                // Filtrar saludos triviales y capturar oraciones con valor comercial
                 val cleaned = turn.text.trim()
                 if (cleaned.length > 8 && !isTrivialGreeting(cleaned)) {
                     substantiveSentences.add(cleaned)
                 }
             }
+            parsedTranscriptText = sbTranscription.toString()
         }
 
-        val fullTranscriptText = sbTranscription.toString()
+        // 3. Puntos Importantes
+        val keyPoints = if (parsedKeyPoints.isNotEmpty()) parsedKeyPoints else extractKeyPoints(substantiveSentences)
 
-        // 3. Extracción de Puntos Importantes
-        val keyPoints = extractKeyPoints(substantiveSentences)
+        // 4. Acuerdos y Compromisos
+        val agreements = if (parsedAgreements.isNotEmpty()) parsedAgreements else extractAgreements(substantiveSentences)
 
-        // 4. Extracción de Acuerdos y Compromisos
-        val agreements = extractAgreements(substantiveSentences)
-
-        // 5. Extracción y Programación Automática de Citas en la Agenda
+        // 5. Citas y Eventos
         val scheduledEvents = extractAndScheduleEvents(substantiveSentences, now)
 
         // 6. Redacción del Acta Ejecutiva Completa
-        val actaContent = buildString {
-            appendLine("======================================================================")
-            appendLine("ACTA EJECUTIVA DE REUNIÓN Y ACUERDOS COMERCIALES - CDPE")
-            appendLine("======================================================================")
-            appendLine("Fecha y Hora: $dateHuman")
-            appendLine("Duración: $durFormatted")
-            appendLine("Audio Asociado: ${associatedAudioFile?.name ?: "Grabación interna"}")
-            appendLine("Participantes: ${participants.joinToString(", ")}")
-            appendLine("----------------------------------------------------------------------")
-            appendLine("📌 1. RESUMEN DE PUNTOS IMPORTANTES")
-            appendLine("----------------------------------------------------------------------")
-            if (keyPoints.isEmpty()) {
-                appendLine("• Diálogo general de coordinación sin requerimientos críticos registrados.")
-            } else {
-                keyPoints.forEach { pt -> appendLine("• $pt") }
+        val actaContent = if (!directAiTranscript.isNullOrBlank()) {
+            buildString {
+                appendLine("======================================================================")
+                appendLine("ACTA EJECUTIVA DE REUNIÓN Y ACUERDOS COMERCIALES - CDPE")
+                appendLine("======================================================================")
+                appendLine("Fecha y Hora: $dateHuman")
+                appendLine("Duración: $durFormatted")
+                appendLine("Audio Asociado: ${associatedAudioFile?.name ?: "Grabación interna"}")
+                appendLine("Participantes: ${participants.joinToString(", ")}")
+                appendLine("----------------------------------------------------------------------")
+                appendLine(directAiTranscript.trim())
+                appendLine("======================================================================")
+                appendLine("Generado automáticamente por el Asistente Ejecutivo JOWELL - CDPE Guatemala")
             }
-            appendLine()
-            appendLine("----------------------------------------------------------------------")
-            appendLine("🤝 2. ACUERDOS Y COMPROMISOS ALCANZADOS")
-            appendLine("----------------------------------------------------------------------")
-            if (agreements.isEmpty()) {
-                appendLine("• Pendiente confirmación de acuerdos formales en siguiente sesión.")
-            } else {
-                agreements.forEachIndexed { i, ag -> appendLine("${i + 1}. $ag") }
-            }
-            appendLine()
-            appendLine("----------------------------------------------------------------------")
-            appendLine("📅 3. CITAS Y EVENTOS AGENDADOS AUTOMÁTICAMENTE")
-            appendLine("----------------------------------------------------------------------")
-            if (scheduledEvents.isEmpty()) {
-                appendLine("• No se mencionaron fechas específicas de reunión en esta conversación.")
-            } else {
-                scheduledEvents.forEach { ev ->
-                    appendLine("✔ Cita Programada: \"${ev.title}\"")
-                    appendLine("  Fecha/Hora: ${ev.dateDescription} - ${ev.timeDescription}")
-                    appendLine("  Lugar: ${ev.location}")
-                    appendLine("  Estado: REGISTRADO AUTOMÁTICAMENTE EN LA AGENDA")
+        } else {
+            buildString {
+                appendLine("======================================================================")
+                appendLine("ACTA EJECUTIVA DE REUNIÓN Y ACUERDOS COMERCIALES - CDPE")
+                appendLine("======================================================================")
+                appendLine("Fecha y Hora: $dateHuman")
+                appendLine("Duración: $durFormatted")
+                appendLine("Audio Asociado: ${associatedAudioFile?.name ?: "Grabación interna"}")
+                appendLine("Participantes: ${participants.joinToString(", ")}")
+                appendLine("----------------------------------------------------------------------")
+                appendLine("📌 1. RESUMEN DE PUNTOS IMPORTANTES")
+                appendLine("----------------------------------------------------------------------")
+                if (keyPoints.isEmpty()) {
+                    appendLine("• Diálogo general de coordinación sin requerimientos críticos registrados.")
+                } else {
+                    keyPoints.forEach { pt -> appendLine("• $pt") }
                 }
+                appendLine()
+                appendLine("----------------------------------------------------------------------")
+                appendLine("🤝 2. ACUERDOS Y COMPROMISOS ALCANZADOS")
+                appendLine("----------------------------------------------------------------------")
+                if (agreements.isEmpty()) {
+                    appendLine("• Pendiente confirmación de acuerdos formales en siguiente sesión.")
+                } else {
+                    agreements.forEachIndexed { i, ag -> appendLine("${i + 1}. $ag") }
+                }
+                appendLine()
+                appendLine("----------------------------------------------------------------------")
+                appendLine("📅 3. CITAS Y EVENTOS AGENDADOS AUTOMÁTICAMENTE")
+                appendLine("----------------------------------------------------------------------")
+                if (scheduledEvents.isEmpty()) {
+                    appendLine("• No se mencionaron fechas específicas de reunión en esta conversación.")
+                } else {
+                    scheduledEvents.forEach { ev ->
+                        appendLine("✔ Cita Programada: \"${ev.title}\"")
+                        appendLine("  Fecha/Hora: ${ev.dateDescription} - ${ev.timeDescription}")
+                        appendLine("  Lugar: ${ev.location}")
+                        appendLine("  Estado: REGISTRADO AUTOMÁTICAMENTE EN LA AGENDA")
+                    }
+                }
+                appendLine()
+                appendLine("----------------------------------------------------------------------")
+                appendLine("📝 4. TRANSCRIPCIÓN DETALLADA POR INTERLOCUTOR")
+                appendLine("----------------------------------------------------------------------")
+                appendLine(parsedTranscriptText)
+                appendLine("======================================================================")
+                appendLine("Generado automáticamente por el Asistente Ejecutivo JOWELL - CDPE Guatemala")
             }
-            appendLine()
-            appendLine("----------------------------------------------------------------------")
-            appendLine("📝 4. TRANSCRIPCIÓN DETALLADA POR INTERLOCUTOR")
-            appendLine("----------------------------------------------------------------------")
-            appendLine(fullTranscriptText)
-            appendLine("======================================================================")
-            appendLine("Generado automáticamente por el Asistente Ejecutivo JOWELL - CDPE Guatemala")
         }
 
         // 7. Guardar en carpeta pública y registrar en Android MediaScanner
@@ -230,7 +270,7 @@ class ExecutiveMeetingEngine(
             keyPoints = keyPoints,
             agreements = agreements,
             scheduledEvents = scheduledEvents,
-            fullTranscription = fullTranscriptText,
+            fullTranscription = parsedTranscriptText,
             savedFilePath = actaFile.absolutePath
         )
     }
