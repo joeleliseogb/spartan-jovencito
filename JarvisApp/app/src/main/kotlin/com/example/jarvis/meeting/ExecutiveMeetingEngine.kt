@@ -123,8 +123,8 @@ class ExecutiveMeetingEngine(
             history.forEachIndexed { idx, turn ->
                 val speakerLabel = when {
                     turn.role == "user" && idx % 2 == 0 -> "JOEL (DIRECTOR)"
-                    turn.role == "user" -> "CLIENTE / INTERLOCUTOR"
-                    else -> "ASISTENTE EJECUTIVO JOWELL"
+                    turn.role == "client" || turn.role == "user" -> "CLIENTE / INTERLOCUTOR"
+                    else -> "INTERLOCUTOR"
                 }
                 val timeLabel = turn.timestamp.ifBlank {
                     SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())

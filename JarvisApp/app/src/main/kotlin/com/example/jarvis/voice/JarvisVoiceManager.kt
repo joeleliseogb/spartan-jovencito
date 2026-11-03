@@ -171,6 +171,10 @@ class JarvisVoiceManager(private val context: Context) : TextToSpeech.OnInitList
     private val _isConversationModeActive = MutableStateFlow(false)
     val isConversationModeActive = _isConversationModeActive.asStateFlow()
 
+    // Modo secretario silencioso para reuniones con clientes (Solo transcribe, NO habla, NO interrumpe)
+    private val _isMeetingModeActive = MutableStateFlow(false)
+    val isMeetingModeActive = _isMeetingModeActive.asStateFlow()
+
     // Estado de Reposo / Standby por comandos de voz
     private val _isSleeping = MutableStateFlow(false)
     val isSleeping = _isSleeping.asStateFlow()
@@ -372,11 +376,17 @@ class JarvisVoiceManager(private val context: Context) : TextToSpeech.OnInitList
 
                     override fun onError(error: Int) {
                         Log.d("Siri", "Speech error code: $error")
-                        if (!_isConversationModeActive.value) {
+                        if (!_isConversationModeActive.value && !_isMeetingModeActive.value) {
                             _voiceState.value = VoiceState.IDLE
                             if (error != SpeechRecognizer.ERROR_NO_MATCH && error != SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
                                 _liveTranscript.value = "Toca TALK para hablar con Siri."
                             }
+                            return
+                        }
+
+                        // Modo reunión silenciosa activa: re-armar escucha sin emitir sonido
+                        if (_isMeetingModeActive.value) {
+                            scheduleRestartListening(delayMs = 300L)
                             return
                         }
 
@@ -398,6 +408,19 @@ class JarvisVoiceManager(private val context: Context) : TextToSpeech.OnInitList
                     override fun onResults(results: Bundle?) {
                         val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION) ?: arrayListOf()
                         val text = selectBestMatch(matches)
+
+                        // MODO REUNIÓN CON CLIENTES: Registrar oradores en silencio, NUNCA responder ni interrumpir
+                        if (_isMeetingModeActive.value) {
+                            if (text.isNotBlank()) {
+                                val currentTurns = conversationHistory.size
+                                val role = if (currentTurns % 2 == 0) "user" else "client"
+                                addHistoryTurn(role, text)
+                                _liveTranscript.value = text
+                            }
+                            speechBuffer.clear()
+                            scheduleRestartListening(delayMs = 200L)
+                            return
+                        }
 
                         if (text.isNotBlank()) {
                             if (speechBuffer.isNotEmpty()) {
@@ -437,8 +460,12 @@ class JarvisVoiceManager(private val context: Context) : TextToSpeech.OnInitList
                         val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                         val partial = matches?.firstOrNull()?.trim() ?: ""
                         if (partial.isNotBlank()) {
-                            val combined = if (speechBuffer.isNotEmpty()) "${speechBuffer} $partial" else partial
-                            _liveTranscript.value = combined
+                            if (_isMeetingModeActive.value) {
+                                _liveTranscript.value = "🗣 $partial"
+                            } else {
+                                val combined = if (speechBuffer.isNotEmpty()) "${speechBuffer} $partial" else partial
+                                _liveTranscript.value = combined
+                            }
                         }
                     }
 
@@ -469,6 +496,37 @@ class JarvisVoiceManager(private val context: Context) : TextToSpeech.OnInitList
         } catch (e: Throwable) {
             Log.e("JarvisVoiceManager", "Error al iniciar modo conversacion / reunion", e)
         }
+    }
+
+    /**
+     * MODO SECRETARIO SILENCIOSO (ACTAS Y REUNIONES CON CLIENTES):
+     * Transcribe fielmente todo lo que se habla en la sala SIN responder,
+     * SIN interrumpir y SIN emitir sonidos con el altavoz.
+     */
+    fun startMeetingRecordingMode() {
+        try {
+            _isMeetingModeActive.value = true
+            _isConversationModeActive.value = false
+            clearConversationHistory()
+            silenceJob?.cancel()
+            textToSpeech?.stop()
+            speechBuffer.clear()
+            _voiceState.value = VoiceState.LISTENING
+            _liveTranscript.value = "🔴 Grabando reunión. Transcribiendo en silencio..."
+            startListeningInternal()
+        } catch (e: Throwable) {
+            Log.e("JarvisVoiceManager", "Error al iniciar modo reunion silenciosa", e)
+        }
+    }
+
+    fun stopMeetingRecordingMode() {
+        _isMeetingModeActive.value = false
+        silenceJob?.cancel()
+        speechBuffer.clear()
+        stopListeningInternal()
+        textToSpeech?.stop()
+        _voiceState.value = VoiceState.IDLE
+        _liveTranscript.value = "Reunión finalizada. Procesando acta..."
     }
 
     fun stopConversationMode() {
@@ -522,10 +580,10 @@ class JarvisVoiceManager(private val context: Context) : TextToSpeech.OnInitList
     }
 
     private fun scheduleRestartListening(delayMs: Long) {
-        if (!_isConversationModeActive.value) return
+        if (!_isConversationModeActive.value && !_isMeetingModeActive.value) return
         scope.launch {
             delay(delayMs)
-            if (_isConversationModeActive.value &&
+            if ((_isConversationModeActive.value || _isMeetingModeActive.value) &&
                 _voiceState.value != VoiceState.SPEAKING &&
                 _voiceState.value != VoiceState.PROCESSING) {
                 startListeningInternal()
@@ -1860,7 +1918,7 @@ class JarvisVoiceManager(private val context: Context) : TextToSpeech.OnInitList
 
                 val mediaType = "application/json; charset=utf-8".toMediaType()
                 val body = json.toString().toRequestBody(mediaType)
-                val url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=$effectiveKey"
+                val url = "https://generativelanguage.googleapis.com/v1beta/models/${com.example.jarvis.api.GeminiConfig.MODEL_NAME}:generateContent?key=$effectiveKey"
                 val request = Request.Builder().url(url).post(body).build()
 
                 val response = httpClient.newCall(request).execute()

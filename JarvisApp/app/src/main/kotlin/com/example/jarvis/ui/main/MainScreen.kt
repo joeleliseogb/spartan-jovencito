@@ -4492,9 +4492,9 @@ private fun MinutesScreen(
 ) {
     val context = LocalContext.current
     val history by voiceManager.conversationHistoryList.collectAsState()
-    val isSessionActive by voiceManager.isConversationModeActive.collectAsState()
-
+    val isMeetingModeActive by voiceManager.isMeetingModeActive.collectAsState()
     var isRecordingAudio by remember { mutableStateOf(false) }
+    val isSessionActive = isMeetingModeActive || isRecordingAudio
     var mediaRecorder by remember { mutableStateOf<MediaRecorder?>(null) }
     var currentMeetingAudioFile by remember { mutableStateOf<File?>(null) }
     var currentMeetingTxtFile by remember { mutableStateOf<File?>(null) }
@@ -4614,9 +4614,27 @@ private fun MinutesScreen(
                 isPreviewPlaying = false
             } catch (e: Exception) {}
 
-            // Iniciar transcriptor en vivo con prioridad exclusiva de micrófono (sin colisión de hardware)
+            // Iniciar grabación física de audio a archivo .m4a
+            val recorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                MediaRecorder(context)
+            } else {
+                @Suppress("DEPRECATION")
+                MediaRecorder()
+            }.apply {
+                setAudioSource(MediaRecorder.AudioSource.MIC)
+                setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                setAudioEncodingBitRate(128000)
+                setAudioSamplingRate(44100)
+                setOutputFile(audioFile.absolutePath)
+                prepare()
+                start()
+            }
+            mediaRecorder = recorder
             isRecordingAudio = true
-            voiceManager.startConversationMode()
+
+            // Iniciar transcriptor en modo reunión SILENCIOSO (no habla, no interrumpe a los clientes)
+            voiceManager.startMeetingRecordingMode()
         } catch (e: Throwable) {
             Log.e("MinutesScreen", "Error al iniciar sesión de reunión", e)
             meetingSavedMessage = "Error al iniciar: ${e.message}"
@@ -4624,8 +4642,22 @@ private fun MinutesScreen(
     }
 
     fun stopAndSaveMeetingSession() {
-        voiceManager.stopConversationMode()
+        try {
+            mediaRecorder?.stop()
+            mediaRecorder?.release()
+        } catch (e: Exception) {
+            Log.e("MinutesScreen", "Error stopping MediaRecorder", e)
+        }
+        mediaRecorder = null
         isRecordingAudio = false
+
+        voiceManager.stopMeetingRecordingMode()
+
+        currentMeetingAudioFile?.let { audio ->
+            if (audio.exists() && audio.length() > 0) {
+                MediaScannerConnection.scanFile(context, arrayOf(audio.absolutePath), null, null)
+            }
+        }
 
         try {
             val report = voiceManager.finalizeAndProcessMeeting(
@@ -4633,7 +4665,7 @@ private fun MinutesScreen(
                 durationSeconds = recordingSeconds
             )
             selectedMeetingTab = 0
-            meetingSavedMessage = "✅ Acta guardada: ${File(report.savedFilePath).name}"
+            meetingSavedMessage = "✅ Acta y Audio guardados: ${File(report.savedFilePath).name}"
 
             val spokenMsg = if (report.scheduledEvents.isNotEmpty()) {
                 val ev = report.scheduledEvents.first()
