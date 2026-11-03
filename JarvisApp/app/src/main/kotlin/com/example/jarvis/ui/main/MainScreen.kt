@@ -4550,9 +4550,37 @@ private fun MinutesScreen(
     val powerManager = remember { context.getSystemService(Context.POWER_SERVICE) as? PowerManager }
     var wakeLock by remember { mutableStateOf<PowerManager.WakeLock?>(null) }
 
+    fun getMeetingAndRecorderAudios(): List<File> {
+        val list = mutableListOf<File>()
+        try {
+            val base = Environment.getExternalStoragePublicDirectory("Recordings")
+            File(base, "JOWELL/Reuniones").listFiles()?.filter { it.extension in listOf("m4a", "mp3", "wav", "aac") }?.let { list.addAll(it) }
+            File(base, "JOWELL").listFiles()?.filter { it.extension in listOf("m4a", "mp3", "wav", "aac") }?.let {
+                for (f in it) {
+                    if (list.none { existing -> existing.name == f.name }) list.add(f)
+                }
+            }
+            context.getExternalFilesDir("Recordings")?.listFiles()?.filter { it.extension in listOf("m4a", "mp3", "wav", "aac") }?.let {
+                for (f in it) {
+                    if (list.none { existing -> existing.name == f.name }) list.add(f)
+                }
+            }
+        } catch (e: Exception) {}
+        return list.sortedByDescending { it.lastModified() }
+    }
+
+    var availableAudios by remember { mutableStateOf(getMeetingAndRecorderAudios()) }
+    var audioSelectIndex by remember { mutableIntStateOf(0) }
+
     LaunchedEffect(Unit) {
         // Al entrar a Actas y Minutas, apagar de inmediato el escuchador conversacional para evitar cualquier ding de Android
         voiceManager.stopConversationMode()
+        val audios = getMeetingAndRecorderAudios()
+        availableAudios = audios
+        if (currentMeetingAudioFile == null && audios.isNotEmpty()) {
+            currentMeetingAudioFile = audios.first()
+            meetingSavedMessage = "Audio CDPE: ${audios.first().name}"
+        }
     }
 
     DisposableEffect(Unit) {
@@ -4902,8 +4930,9 @@ private fun MinutesScreen(
             speaker4PeakDb = speaker4PeakDb
         )
 
-        // Aviso de Guardado con Acceso Rápido al Reproductor
-        if (meetingSavedMessage != null) {
+        // Acceso Rápido al Reproductor y Procesamiento con IA de Grabaciones Disponibles
+        val targetAudio = currentMeetingAudioFile
+        if (targetAudio != null && targetAudio.exists()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -4914,74 +4943,88 @@ private fun MinutesScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = meetingSavedMessage ?: "",
-                    fontSize = 9.sp,
-                    fontFamily = FontFamily.Monospace,
-                    color = Color(0xFFB9F6CA),
-                    modifier = Modifier.weight(1f)
-                )
-                currentMeetingAudioFile?.let { audio ->
-                    if (audio.exists()) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .background(Color(0xFF00E676))
-                                    .clickable {
-                                        try {
-                                            if (isPreviewPlaying && previewPlayer != null) {
-                                                previewPlayer?.stop()
-                                                previewPlayer?.release()
-                                                previewPlayer = null
-                                                isPreviewPlaying = false
-                                            } else {
-                                                previewPlayer?.release()
-                                                previewPlayer = MediaPlayer().apply {
-                                                    setDataSource(audio.absolutePath)
-                                                    prepare()
-                                                    start()
-                                                    setOnCompletionListener { isPreviewPlaying = false }
-                                                }
-                                                isPreviewPlaying = true
-                                            }
-                                        } catch (e: Exception) {
-                                            Log.e("Minutes", "Error reproduciendo preview", e)
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = meetingSavedMessage ?: "Audio: ${targetAudio.name}",
+                        fontSize = 9.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = Color(0xFFB9F6CA)
+                    )
+                    if (availableAudios.size > 1) {
+                        Text(
+                            text = "Toca para alternar (${audioSelectIndex + 1}/${availableAudios.size})",
+                            fontSize = 7.5.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = Color(0xFF80CBC4),
+                            modifier = Modifier.clickable {
+                                audioSelectIndex = (audioSelectIndex + 1) % availableAudios.size
+                                val nextAudio = availableAudios[audioSelectIndex]
+                                currentMeetingAudioFile = nextAudio
+                                meetingSavedMessage = "Audio CDPE: ${nextAudio.name}"
+                                previewPlayer?.release()
+                                previewPlayer = null
+                                isPreviewPlaying = false
+                            }
+                        )
+                    }
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(Color(0xFF00E676))
+                            .clickable {
+                                try {
+                                    if (isPreviewPlaying && previewPlayer != null) {
+                                        previewPlayer?.stop()
+                                        previewPlayer?.release()
+                                        previewPlayer = null
+                                        isPreviewPlaying = false
+                                    } else {
+                                        previewPlayer?.release()
+                                        previewPlayer = MediaPlayer().apply {
+                                            setDataSource(targetAudio.absolutePath)
+                                            prepare()
+                                            start()
+                                            setOnCompletionListener { isPreviewPlaying = false }
                                         }
+                                        isPreviewPlaying = true
                                     }
-                                    .padding(horizontal = 6.dp, vertical = 3.dp)
-                            ) {
-                                Text(
-                                    text = if (isPreviewPlaying) "❚❚" else "▶ OÍR",
-                                    fontSize = 10.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.Black
-                                )
+                                } catch (e: Exception) {
+                                    Log.e("Minutes", "Error reproduciendo preview", e)
+                                }
                             }
+                            .padding(horizontal = 6.dp, vertical = 3.dp)
+                    ) {
+                        Text(
+                            text = if (isPreviewPlaying) "❚❚" else "▶ OÍR",
+                            fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.Black
+                        )
+                    }
 
-                            // Botón para procesar con IA cuando se conecte a internet
-                            Box(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .background(if (isAiProcessing) Color(0xFF616161) else Color(0xFF00E5FF))
-                                    .clickable {
-                                        if (!isAiProcessing) reprocessMeetingWithAi()
-                                    }
-                                    .padding(horizontal = 6.dp, vertical = 3.dp)
-                            ) {
-                                Text(
-                                    text = if (isAiProcessing) "⏳" else "🔄 IA",
-                                    fontSize = 10.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.Black
-                                )
+                    // Botón para procesar con IA cuando se conecte a internet
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(if (isAiProcessing) Color(0xFF616161) else Color(0xFF00E5FF))
+                            .clickable {
+                                if (!isAiProcessing) reprocessMeetingWithAi()
                             }
-                        }
+                            .padding(horizontal = 6.dp, vertical = 3.dp)
+                    ) {
+                        Text(
+                            text = if (isAiProcessing) "⏳" else "🔄 IA",
+                            fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.Black
+                        )
                     }
                 }
             }
